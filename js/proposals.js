@@ -1,21 +1,34 @@
 // Génère des propositions de montage complètes à partir de l'analyse de la vidéo :
 // hook tiré de la transcription, motions placées sur les phrases, les chiffres,
 // les questions et les temps forts de la voix.
-import { M, FONTS, PALETTES, TITLES, CAPTION_STYLES } from './render.js';
+import { M, FONTS, PALETTES, TITLES, CAPTION_STYLES, clamp } from './render.js';
 import { sentences } from './analyze.js';
 
+// Chaque modèle reprend la « personnalité » d'un style de montage repéré dans des reels de référence.
 const TEMPLATES = [
-  { name: 'Viral punchy', font: 'Anton', pal: 0, title: 'tiles', captions: 'pop', cuts: true, hook: 'first',
+  { name: 'Story doré', inspo: 'Cartes lumineuses, chiffres, checklist, sous-titres serif dorés',
+    font: 'Archivo Black', pal: 6, title: 'editorial', captions: 'editorial', cuts: true, hook: 'first', media: 'card',
+    recipe: ['statcard', 'stamp:peak', 'recframe:.45', 'focus:peak2', 'typing', 'zoom:peaks:2'], stamp: '100% vrai' },
+  { name: 'Ciné cuivré', inspo: 'Plein écran chaud et granuleux, BAM sur le rythme, crochets dorés',
+    font: 'Inter Extra Bold', pal: 8, title: 'stack', captions: 'brackets', cuts: true, hook: 'peak', media: 'full',
+    recipe: ['name', 'kinetic:.35', 'beat:peak', 'spotlight:peak2', 'bigword:.75'] },
+  { name: 'Studio crème', inspo: 'Écran partagé, stickers blancs, texte tapé, serif italique',
+    font: 'Instrument Serif', pal: 7, title: 'sticker', captions: 'mixte', cuts: true, hook: 'first', media: 'split',
+    recipe: ['numbers', 'prompt:.55', 'comment', 'zoom:peaks:1'] },
+  { name: 'Zéro montage', inspo: 'Note manuscrite, carte couleur, tampon « 1 prise »',
+    font: 'Playfair italique', pal: 0, title: 'editorial', captions: 'box', cuts: true, hook: 'question', media: 'sticker',
+    recipe: ['note:.3', 'colorcard:.55', 'stamp:peak', 'zoom:every'], stamp: '1 prise' },
+  { name: 'Rose tag', inspo: 'Titre en étiquettes roses, incrustations, word pop',
+    font: 'Inter Extra Bold', pal: 9, title: 'highlight', captions: 'pop', cuts: true, hook: 'question', media: 'pip',
+    recipe: ['words:.5', 'comment', 'zoom:peaks:2', 'shrink:end'], cta: 'Abonne-toi' },
+  { name: 'Viral punchy', inspo: 'Tuiles, zooms, orbit de photos, carte de fin',
+    font: 'Anton', pal: 0, title: 'tiles', captions: 'pop', cuts: true, hook: 'first', media: 'card',
     recipe: ['zoom:peaks:3', 'counter', 'comment', 'orbit:.55', 'shrink:end'], cta: 'Abonne-toi' },
-  { name: 'Clean pro', font: 'Inter Extra Bold', pal: 5, title: 'banner', captions: 'box', cuts: true, hook: 'first',
+  { name: 'Clean pro', inspo: 'Sobre : bandeau, lower third, carousel',
+    font: 'Inter Extra Bold', pal: 5, title: 'banner', captions: 'band', cuts: true, hook: 'first', media: 'split',
     recipe: ['lower', 'carousel:.5', 'zoom:peaks:1', 'shrink:end'], cta: 'Suis-moi pour la suite' },
-  { name: 'Storytime', font: 'DM Serif Display', pal: 4, title: 'type', captions: 'karaoke', cuts: false, hook: 'question',
-    recipe: ['comment', 'words:.6', 'carousel:.35'] },
-  { name: 'Énergie max', font: 'Bebas Neue', pal: 1, title: 'stack', captions: 'pop', cuts: true, hook: 'peak',
-    recipe: ['zoom:every', 'orbit:.3', 'counter', 'words:.7', 'carousel:.85'] },
-  { name: 'Éducatif', font: 'Archivo Black', pal: 2, title: 'banner', captions: 'box', cuts: true, hook: 'question',
-    recipe: ['lower', 'counter', 'words:.5', 'comment', 'shrink:end'], cta: 'Enregistre pour plus tard' },
-  { name: 'Minimal', font: 'Space Mono', pal: 3, title: 'type', captions: 'box', cuts: true, hook: 'first',
+  { name: 'Minimal', inspo: 'Juste des sous-titres et un zoom',
+    font: 'Space Mono', pal: 3, title: 'type', captions: 'box', cuts: true, hook: 'first', media: 'pip',
     recipe: ['zoom:peaks:2'] },
 ];
 
@@ -66,13 +79,23 @@ function findNumber(words) {
   return null;
 }
 
+// Mots du début de la phrase avant un nombre (« j'ai fait courir » 40 personnes).
+function beforeNumber(sents, t) {
+  const s = sents.find(x => t >= x.s - .01 && t <= x.e + .01);
+  if (!s) return '';
+  const i = s.words.findIndex(w => w.s >= t - .01);
+  return s.words.slice(Math.max(0, i - 3), i).map(w => clean(w.w)).join(' ');
+}
+const near = (list, target) => [...list].sort((a, b) => Math.abs(a.s - target) - Math.abs(b.s - target))[0];
+
 function keyWords(sent) {
   const ws = sent.words.map(w => clean(w.w)).filter(w => w.length >= 4);
   const top = new Set([...ws].sort((a, b) => b.length - a.length).slice(0, 4));
   return ws.filter(w => top.has(w)).slice(0, 4).join(' ');
 }
 
-export function makeProposals(A, seed = 0) {
+// A = analyse { duration, words, peaks }, media = médias déjà placés [{ start, dur }] (le temps qu'ils occupent est réservé).
+export function makeProposals(A, seed = 0, media = []) {
   const r = rng(seed * 7919 + 1);
   const duration = A.duration || 30;
   const words = A.words || [];
@@ -88,19 +111,22 @@ export function makeProposals(A, seed = 0) {
       t.title = pick(r, TITLES).id; t.captions = pick(r, CAPTION_STYLES).id;
       t.hook = pick(r, ['first', 'question', 'peak']); t.cta = pick(r, CTAS);
     }
-    const used = [];
+    const used = media.map(m => [m.start, m.start + m.dur]);
     const free = (a, b) => a >= titleDur && b <= duration - .1 && used.every(([x, y]) => b <= x || a >= y);
     const anchors = (sents.length ? sents.map(s => s.s) : []).concat(
       Array.from({ length: Math.ceil(duration) }, (_, i) => i)).filter(a => a >= titleDur);
     const motions = [];
     const place = (type, prefer, extra = {}) => {
-      const dur = M[type].dur;
-      const cand = anchors.map(a => Math.max(titleDur, a - .15)).sort((a, b) => Math.abs(a - prefer) - Math.abs(b - prefer));
+      const dur = extra.dur ?? M[type].dur;
+      const cand = anchors.concat([prefer]).map(a => Math.max(titleDur, a - .15)).sort((a, b) => Math.abs(a - prefer) - Math.abs(b - prefer));
       const at = cand.find(a => free(a, a + dur));
       if (at == null) return;
       used.push([at, at + dur]);
       motions.push({ type, variant: seed ? Math.floor(r() * 3) : ti % 2, start: +at.toFixed(2), dur, text: M[type].text, ...extra });
     };
+    const peakAt = arg => arg === 'peak2' ? (peaks[1] ?? peaks[0]) : arg === 'peak' ? peaks[0] : null;
+    const at = arg => peakAt(arg) ?? duration * (+arg || .5);
+    const sentNear = (arg, min = 3, max = 99) => near(sents.filter(x => x.words.length >= min && x.words.length <= max), at(arg));
 
     for (const item of t.recipe) {
       const [type, arg, n] = item.split(':');
@@ -111,27 +137,59 @@ export function makeProposals(A, seed = 0) {
       } else if (type === 'counter') {
         const num = findNumber(words);
         if (num) place('counter', num.t, { text: num.text });
+      } else if (type === 'statcard') {
+        const num = findNumber(words);
+        if (num) {
+          const [value, ...unit] = num.text.split(' ');
+          place('statcard', num.t - .3, { text: `${beforeNumber(sents, num.t) || 'Le chiffre'}|${value}+|${unit.join(' ') || 'au total'}` });
+        }
       } else if (type === 'comment') {
         const q = sents.find((s, i) => i > 0 && s.text.trim().endsWith('?'));
         const text = q ? q.text.slice(0, 90) : sents.length ? null : pick(r, FALLBACK_COMMENTS);
         if (text) place('comment', q ? q.s : duration * .45, { text });
       } else if (type === 'words') {
-        const target = duration * (+arg || .5);
-        const s = sents.filter(x => x.words.length >= 3).sort((a, b) => Math.abs(a.s - target) - Math.abs(b.s - target))[0];
+        const s = sentNear(arg);
         const text = s && keyWords(s);
         if (text) place('words', s.s, { text });
       } else if (type === 'shrink') {
         const last = sents.length ? sents[sents.length - 1].s : duration - M.shrink.dur - .3;
         place('shrink', Math.min(last, duration - M.shrink.dur - .2), { text: t.cta || 'Abonne-toi' });
-      } else if (type === 'lower') {
-        place('lower', titleDur + .2);
+      } else if (type === 'lower' || type === 'name') {
+        place(type, titleDur + .2);
+      } else if (type === 'stamp') {
+        place('stamp', at(arg), { text: t.stamp || '100% vrai' });
+      } else if (type === 'typing') {
+        const s = sents.find((x, i) => i > 0 && x.s - sents[i - 1].e >= .5);
+        if (s) place('typing', s.s - M.typing.dur);
+      } else if (type === 'numbers') {
+        const w = words.find(x => /^(premi|deuxi|troisi|[ée]tape|step|first|second|third)/i.test(x.w));
+        if (w) place('numbers', w.s);
+      } else if (type === 'prompt') {
+        const s = sentNear(arg, 3, 7);
+        if (s) place('prompt', s.s, { text: s.text });
+      } else if (type === 'kinetic') {
+        const s = sentNear(arg, 3, 7);
+        if (s) place('kinetic', s.s, { text: s.text, dur: clamp(s.e - s.s + .6, 1.8, 4) });
+      } else if (type === 'note' || type === 'colorcard') {
+        const s = sentNear(arg);
+        const text = s && keyWords(s).split(' ').slice(0, type === 'note' ? 3 : 2).join(' ').toLowerCase();
+        if (text) place(type, s.s, { text });
+      } else if (type === 'beat') {
+        const s = sentNear(arg);
+        const text = s && keyWords(s).split(' ').slice(0, 3).join(' ');
+        if (text) place('beat', at(arg), { text: text.toUpperCase() });
+      } else if (type === 'bigword') {
+        const s = sentNear(arg);
+        const text = s && keyWords(s).split(' ').sort((a, b) => b.length - a.length)[0];
+        if (text) place('bigword', s.s, { text: text.toLowerCase() });
       } else {
-        place(type, duration * (+arg || .5));
+        place(type, at(arg));
       }
     }
     motions.sort((a, b) => a.start - b.start);
     return {
-      name: T.name, font: t.font, pal: t.pal, title: t.title, titleDur, captions: t.captions, cuts: t.cuts,
+      name: T.name, inspo: T.inspo, font: t.font, pal: t.pal, title: t.title, titleDur, captions: t.captions, cuts: t.cuts,
+      mediaLayout: T.media,
       hook: hookFrom(sents, t.hook, peaks, FALLBACK_HOOKS[(ti + seed) % FALLBACK_HOOKS.length], usedHooks),
       motions,
     };
