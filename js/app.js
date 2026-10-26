@@ -1,43 +1,42 @@
-import { FONTS, PALETTES, TITLES, CAPTION_STYLES, MOTIONS, CATEGORIES, M, render, setVideo, fstr, clamp, GLOW_COLORS, DEFAULT_FX } from './render.js';
-import { depth, BROWSER_MODELS, startBrowserMatting, startServerMatting, resetMatting, updateDepth, whenPrepared } from './depth.js';
-import { decodeAudio, loudness, findSilences, cutsFromSilences, findPeaks, transcribe, cancelTranscription, chunkWords, retextChunk } from './analyze.js';
-import { makeProposals, motionFromMoment } from './proposals.js';
-import { analyzeContent, motionText, TOPIC_NAMES } from './semantics.js';
+// Video Edit Studio : trois onglets.
+//  - Look : 7 étapes (couleurs, polices, accroche, sous-titres, éléments, motion, revue). Chaque carte
+//    montre ta vidéo avec l'option ; un clic l'applique partout.
+//  - Édition : ta transcription comme un document. Tu corriges les mots, tu barres ce qu'il faut couper,
+//    chaque animation est posée sur ses mots et se modifie (texte, moment, type).
+//  - Revue : coupes, sous-titres, sons, export, couverture.
+import { render, setVideo, lookContext } from './render.js';
+import { fstr, clamp, PALETTES } from './kit.js';
+import { FONT_PAIRS, HOOK_STYLES, CAPTION_STYLES, ELEMENTS, MOTIONS, CATALOG, PRESETS, DEFAULT_LOOK } from './look.js';
+import { decodeAudio, loudness, findSilences, cutsFromSilences, findPeaks, transcribe, cancelTranscription, chunkWords } from './analyze.js';
+import { autoPlan, itemFromMoment, claudePrompt, parsePlan, planToItems, hookFrom, wordIndexAt } from './plan.js';
 import { MEDIA_LAYOUTS, POSITIONS, interpretMedia, hasAlpha } from './media.js';
 import { SFX, DEFAULT_SFX, sfxEvents, playSfx } from './sfx.js';
+import { depth, BROWSER_MODELS, startBrowserMatting, startServerMatting, resetMatting, updateDepth, whenPrepared } from './depth.js';
 
-const STEPS = [
-  ['import', 'Import', 'Importe ta vidéo.', 'Elle est analysée sur ton ordinateur : voix, silences, temps forts.'],
-  ['media', 'Médias', 'Ajoute tes images, PNG et vidéos.', 'Écris à côté de chacun ce que tu veux en faire, l\'app le place pour toi.'],
-  ['proposals', 'Propositions', 'Choisis un montage.', 'Chaque proposition est construite à partir de ce que tu dis et de tes médias.'],
-  ['hook', 'Hook', 'Ton hook.', 'Les deux lignes affichées au début.'],
-  ['font', 'Police', 'Choisis la police.', 'Chaque aperçu est dessiné en direct sur ta vidéo.'],
-  ['colors', 'Couleurs', 'Choisis tes couleurs.', 'L\'accent sert aux titres, cartes, motions et sous-titres.'],
-  ['title', 'Titre', 'Choisis le style de titre.', 'Dessiné en direct dans tes couleurs et ta police.'],
-  ['motions', 'Motions', 'Choisis les animations.', 'Chacune illustre ce que tu dis à un moment précis de ta vidéo. Clique sur une carte pour l\'ajouter.'],
-  ['captions', 'Sous-titres', 'Sous-titres.', 'Générés depuis ta voix, mot à mot. Corrige le texte si besoin.'],
-  ['export', 'Export', 'Coupes, sons, timing & export.', 'Supprime les blancs, règle les sons, puis exporte la vidéo et sa couverture.'],
-];
-const ST = Object.fromEntries(STEPS.map((s, i) => [s[0], i]));
 const LANGS = [['fr', 'Français'], ['en', 'Anglais'], ['es', 'Espagnol'], ['de', 'Allemand'], ['it', 'Italien'], ['pt', 'Portugais'], ['ar', 'Arabe'], ['', 'Détection auto']];
-const KIND_NAMES = { number: 'Chiffre', list: 'Liste', question: 'Question', contrast: 'Avant / Après', emoji: 'Illustration', keyword: 'Mot clé', punch: 'Punchline', stamp: 'Mot fort', unique: 'Un parmi tous' };
+const LOOK_STEPS = ['Couleurs', 'Polices', 'Accroche', 'Sous-titres', 'Éléments', 'Motion', 'Revue'];
+const CHIP_COLORS = { note: '#ffd60a', colorcard: '#ffb020', stamp: '#ff7a59', statcard: '#7ee0ff', checklist: '#3ddc97', versus: '#ff9bd2', emoji: '#ffe08a',
+  screen: '#a0b4ff', lower: '#c8c8c8', orbit: '#b892ff', carousel: '#b892ff', shrink: '#ffd60a', comment: '#ffffff', wordreveal: '#ffe600', counter: '#7ee0ff',
+  kinetic: '#ff8a65', beat: '#ff5a4f', zoom: '#9e9e9e', spotlight: '#9e9e9e' };
 
 const S = {
-  step: 0, fileName: '',
-  A: { status: 'idle', msg: '', frac: 0, duration: 0, pcm: null, db: null, silences: [], peaks: [], words: [], chunks: [], asrError: '' },
+  tab: 'look', lookStep: 0, visited: new Set([0]),
+  file: null, fileName: '',
+  A: { status: 'idle', msg: '', frac: 0, duration: 0, pcm: null, db: null, peaks: [], words: [], asrError: '' },
   opts: { transcribe: true, lang: 'fr' },
-  hook: { l1: 'Quit', l2: 'your job?' }, font: 'Anton', pal: 0, title: 'editorial', titleDur: 3,
-  taken: [], captions: { on: true, style: 'editorial', pos: .74 }, cuts: { on: false, sens: .3, minLen: .5, segs: [] },
-  media: [], mediaLayout: 'card', sfx: { on: true, vol: .6 },
-  fx: { ...DEFAULT_FX, pop: true, slide: true }, depthOn: false, depthEngine: 'browser:multiclass', file: null,
-  proposals: [], seed: 0, preview: -1, applied: '', notes: {},
-  motionTab: 'moments', kindFilter: '', momentType: {}, momentText: {}, libCat: 'infos',
-  uid: 1, server: { ffmpeg: false }, exporting: false,
+  words: [], chunks: [], sentences: [], moments: [], topic: '',
+  look: { ...DEFAULT_LOOK }, hook: { l1: 'Ton accroche', l2: 'en deux lignes' }, titleDur: 3,
+  items: [], media: [], photos: [], sample: null,
+  captions: { on: true, pos: .72 },
+  cuts: { on: true, sens: .3, minLen: .55, segs: [] }, cutSegs: [],
+  sfx: { on: true, vol: .6 }, depthOn: false, depthEngine: 'browser:multiclass',
+  sel: null, lastWord: 0, dict: loadDict(),
+  uid: 1, server: { ffmpeg: false, matting: [] }, exporting: false,
 };
 
 const $ = id => document.getElementById(id);
 const fmt = s => isFinite(s) ? `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}` : '0:00';
-const fmt1 = s => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, '0')}`;
+const fmt1 = s => `${Math.floor(s / 60)}:${(Math.max(0, s) % 60).toFixed(1).padStart(4, '0')}`;
 const video = $('video');
 setVideo(video);
 
@@ -56,115 +55,97 @@ function el(tag, attrs = {}, ...kids) {
 const select = (options, value, onchange, attrs = {}) => el('select', { onchange: e => onchange(e.target.value), ...attrs },
   ...options.map(([v, n]) => el('option', { value: v, ...(String(v) === String(value) ? { selected: '' } : {}) }, n)));
 
-// ---------- Configurations de rendu ----------
-const captionsCfg = style => S.A.chunks.length ? { style, pos: S.captions.pos, chunks: S.A.chunks } : null;
+// ---------- Dictionnaire de corrections (mémorisé dans le navigateur) ----------
+function loadDict() { try { return JSON.parse(localStorage.getItem('ves-dict') || '{}'); } catch { return {}; } }
+function saveDict() { try { localStorage.setItem('ves-dict', JSON.stringify(S.dict)); } catch { /* navigation privée */ } }
+const core = w => w.replace(/^[«"“(]+|[.,!?;:»"”)…]+$/g, '');
+const keyW = w => core(w).toLowerCase();
+// Remplace le cœur d'un mot en gardant sa ponctuation (« bluetooth, » → « Bluetooth, »).
+const withCore = (w, c) => { const m = w.match(/^([«"“(]*)(.*?)([.,!?;:»"”)…]*)$/); return m[1] + c + m[3]; };
 
-// Médias prêts à dessiner. defaultLayout : mise en page du montage choisi, utilisée
-// quand le commentaire ne précise rien.
-function mediaCfg(defaultLayout = S.mediaLayout) {
+// ---------- Données dérivées : sous-titres et coupes ----------
+function refreshDerived() {
+  S.chunks = chunkWords(S.words.filter(w => !w.cut));
+  const segs = S.cuts.on ? [...S.cuts.segs] : [];
+  // Mots barrés : on coupe du début du mot au début du mot gardé suivant.
+  for (let i = 0; i < S.words.length; i++) {
+    if (!S.words[i].cut) continue;
+    let j = i; while (j + 1 < S.words.length && S.words[j + 1].cut) j++;
+    const a = S.words[i].s - .03, b = j + 1 < S.words.length ? S.words[j + 1].s - .03 : S.A.duration;
+    segs.push([Math.max(0, a), b]); i = j;
+  }
+  segs.sort((x, y) => x[0] - y[0]);
+  const merged = [];
+  for (const sg of segs) { const last = merged[merged.length - 1]; if (last && sg[0] <= last[1] + .05) last[1] = Math.max(last[1], sg[1]); else merged.push([...sg]); }
+  S.cutSegs = merged;
+}
+const cutSaving = () => S.cutSegs.reduce((a, [x, y]) => a + (y - x), 0);
+
+function recomputeSilences() {
+  if (!S.A.db) { S.cuts.segs = []; return; }
+  S.cuts.segs = cutsFromSilences(findSilences(S.A.db, S.cuts.sens, S.cuts.minLen), S.A.duration);
+}
+
+// ---------- Médias ----------
+function mediaCfg() {
   return S.media.filter(m => m.ready).map(m => {
     const a = m.auto, o = m.override;
-    return {
-      el: m.el, name: m.name,
-      layout: o.layout || (a.explicitLayout ? a.layout : (m.alpha ? 'sticker' : defaultLayout || a.layout)),
-      start: o.start ?? a.start, dur: o.dur ?? a.dur, label: o.label ?? a.label, pos: o.pos || a.pos,
-    };
+    return { el: m.el, name: m.name, layout: o.layout || (m.alpha && !a.explicitLayout ? 'sticker' : a.layout),
+      start: o.start ?? a.start, dur: o.dur ?? a.dur, label: o.label ?? a.label, pos: o.pos || a.pos };
   });
 }
-const base = () => ({
-  title: S.title, font: S.font, pal: S.pal, hook: S.hook, titleStart: 0, titleDur: S.titleDur,
-  motions: S.taken, media: mediaCfg(), captions: S.captions.on ? captionsCfg(S.captions.style) : null,
-  fx: S.fx, depth: S.depthOn && depth.ready ? depth.alpha : null,
-});
-const proposalCfg = p => ({
-  title: p.title, font: p.font, pal: p.pal, hook: p.hook, titleStart: 0, titleDur: p.titleDur,
-  motions: p.motions, media: mediaCfg(p.mediaLayout), captions: captionsCfg(p.captions),
-  fx: p.fx, depth: (p.depth || S.depthOn) && depth.ready ? depth.alpha : null,
-});
-// Configuration de l'aperçu principal / de l'export.
-const currentCfg = () => S.step === ST.proposals && S.proposals[S.preview] ? proposalCfg(S.proposals[S.preview]) : base();
-const cutSaving = segs => segs.reduce((a, [x, y]) => a + (y - x), 0);
 
-function activeCuts() {
-  if (S.step === ST.proposals && S.proposals[S.preview]) return S.proposals[S.preview].cuts ? S.cuts.segs : [];
-  return S.cuts.on ? S.cuts.segs : [];
+// Configuration de rendu complète.
+function cfg(over = {}) {
+  return {
+    look: S.look, hook: S.hook, titleStart: 0, titleDur: S.titleDur,
+    motions: S.items.map(itemForRender), media: mediaCfg(),
+    captions: S.captions.on && S.chunks.length ? { style: S.look.captions, pos: S.captions.pos, chunks: S.chunks } : null,
+    depth: S.depthOn && depth.ready ? depth.alpha : null, photos: S.photos, ...over,
+  };
+}
+// L'écran d'appli affiche le média choisi s'il y en a un.
+function itemForRender(it) {
+  if (it.type === 'screen' && it.mediaId) { const m = S.media.find(x => x.id === it.mediaId); if (m) return { ...it, mediaEl: m.el }; }
+  return it;
 }
 
-function recomputeCuts() {
-  const A = S.A;
-  if (!A.db) { S.cuts.segs = []; return; }
-  A.silences = findSilences(A.db, S.cuts.sens, S.cuts.minLen);
-  S.cuts.segs = cutsFromSilences(A.silences, A.duration);
-}
-
-function regenerateProposals() {
-  if (S.A.status !== 'done') return;
-  S.proposals = makeProposals(S.A, S.seed, mediaCfg());
-  if (S.preview >= S.proposals.length) S.preview = 0;
-}
-
-function applyProposal(p) {
-  Object.assign(S, { hook: { ...p.hook }, font: p.font, pal: p.pal, title: p.title, titleDur: p.titleDur, applied: p.name, mediaLayout: p.mediaLayout });
-  S.taken = p.motions.map(m => ({ ...m, uid: S.uid++ }));
-  S.captions.style = p.captions; S.captions.on = true;
-  S.cuts.on = p.cuts && S.cuts.segs.length > 0;
-  S.fx = { ...DEFAULT_FX, ...p.fx };
-  if (p.depth) { S.depthOn = true; startDepth(); }
-}
-
-// ---------- Effet « texte en arrière-plan » ----------
-// Moteur « browser:… » : MediaPipe dans le navigateur, masque calculé image par image (par défaut,
-// aucun serveur nécessaire). Moteur « server:… » : serve.py / depth.py (rembg ou mediapipe Python).
+// ---------- Effet « texte derrière toi » ----------
 function startDepth() {
   const [kind, name] = S.depthEngine.split(':');
   if (kind === 'browser') return startBrowserMatting(S.file, name, depthProgress);
   if (!S.file || !S.server.matting?.length) return;
   startServerMatting(S.file, name, depthProgress);
 }
-// L'effet est-il visible à l'écran en ce moment (montage en cours ou proposition en aperçu) ?
-const depthActive = () => S.depthOn || !!(S.step === ST.proposals && S.proposals[S.preview]?.depth);
 function depthProgress() {
   const bar = $('dbar'), msg = $('dmsg');
-  // Pas de redessin complet pendant un export (il effacerait sa barre de progression).
   if (depth.status === 'done' || depth.status === 'error' || !bar) { if (!S.exporting) draw(); return; }
   bar.style.width = (depth.total ? 100 * depth.done / depth.total : 2) + '%';
   msg.textContent = depthText();
 }
 function depthText() {
-  if (depth.status === 'loading') return 'Chargement de MediaPipe et du modèle de détourage (une seule fois)…';
+  if (depth.status === 'loading') return 'Chargement du détourage (une seule fois)…';
   if (depth.status === 'uploading') return 'Envoi de la vidéo au serveur de détourage…';
-  if (depth.status === 'running' && depth.kind === 'browser') return `Préparation de ta silhouette (MediaPipe, ${depth.delegate === 'GPU' ? 'carte graphique' : 'processeur'}) : image ${depth.done} / ${depth.total}. L'effet apparaît déjà sur les images prêtes.`;
-  if (depth.status === 'running') return `Détourage en cours${depth.engine && depth.engine !== 'auto' ? ` (${depth.engine})` : ''} : image ${depth.done} / ${depth.total || '…'}${depth.log ? ` — ${depth.log}` : ''}`;
-  if (depth.status === 'done') return depth.kind === 'browser'
-    ? `Silhouette prête (MediaPipe dans le navigateur, ${depth.delegate === 'GPU' ? 'carte graphique' : 'processeur'}). Le texte passe derrière toi.`
-    : `Silhouette prête (${depth.engine}). Le texte passe maintenant derrière toi.`;
+  if (depth.status === 'running') return `Préparation de ta silhouette : image ${depth.done} / ${depth.total || '…'}. L'effet apparaît déjà sur les images prêtes.`;
+  if (depth.status === 'done') return `Silhouette prête (${depth.kind === 'browser' ? 'navigateur, ' + (depth.delegate === 'GPU' ? 'carte graphique' : 'processeur') : depth.engine}).`;
   if (depth.status === 'error') return 'Détourage impossible : ' + depth.error;
   return '';
 }
-
-// Panneau commun aux étapes de choix du thème : profondeur + motion design.
-function fxPanel(C) {
+function depthPanel() {
   const engines = [
     ...BROWSER_MODELS.map(([id, name]) => [`browser:${id}`, `Navigateur — ${name}`]),
-    ...(S.server.matting?.length ? [['server:auto', 'Serveur Python — auto (rembg, sinon mediapipe)'], ...S.server.matting.map(e => [`server:${e}`, `Serveur Python — ${e}`])] : []),
+    ...(S.server.matting?.length ? [['server:auto', 'Serveur Python — auto'], ...S.server.matting.map(e => [`server:${e}`, `Serveur Python — ${e}`])] : []),
   ];
   const busy = ['loading', 'uploading', 'running'].includes(depth.status);
-  C.append(el('div', { class: 'panel fx' },
-    el('h2', {}, 'Effets du thème'),
+  return el('div', { class: 'panel', style: 'margin-top:14px' },
     el('div', { class: 'options' },
-      el('label', {}, el('input', { type: 'checkbox', checked: S.depthOn,
-        onchange: e => { S.depthOn = e.target.checked; if (S.depthOn) startDepth(); draw(); } }), el('b', {}, 'Effet Texte en Arrière-plan')),
-      el('label', {}, 'Détourage', select(engines, S.depthEngine,
-        v => { S.depthEngine = v; resetMatting(); if (S.depthOn) startDepth(); draw(); }, { disabled: busy || null }))),
-    el('p', { class: 'muted' }, 'Le titre « Géant derrière toi » et les gros mots (beat, compteur, word pop, phrase cinétique…) passent derrière ta silhouette. Le détourage se fait sur ton ordinateur, rien n\'est envoyé en ligne.'),
+      el('label', {}, el('input', { type: 'checkbox', checked: S.depthOn, onchange: e => { S.depthOn = e.target.checked; if (S.depthOn) startDepth(); draw(); } }),
+        el('b', {}, 'Effet Texte en Arrière-plan')),
+      el('label', {}, 'Détourage', select(engines, S.depthEngine, v => { S.depthEngine = v; resetMatting(); if (S.depthOn) startDepth(); draw(); }, { disabled: busy || null }))),
+    el('p', { class: 'muted' }, 'L\'accroche « Géant derrière toi » et les gros textes (phrase plein écran, beat cuts, compteur, mots surlignés, écran d\'appli) passent derrière ta silhouette.'),
     S.depthOn && depth.status !== 'idle' ? el('div', {},
-      el('div', { id: 'dmsg', class: depth.status === 'error' ? 'err' : depth.status === 'done' ? 'understood' : 'muted' }, depthText()),
-      busy ? el('div', { class: 'progress' }, el('div', { id: 'dbar', style: `width:${depth.total ? 100 * depth.done / depth.total : 2}%` })) : null) : null,
-    el('div', { class: 'options' },
-      el('label', {}, el('input', { type: 'checkbox', checked: S.fx.pop, onchange: e => { S.fx.pop = e.target.checked; } }), 'Kinetic Pop (le mot clé grossit quand tu le dis)'),
-      el('label', {}, el('input', { type: 'checkbox', checked: S.fx.slide, onchange: e => { S.fx.slide = e.target.checked; } }), 'Slide & Blur (entrées par le bas avec flou)'),
-      el('label', {}, el('input', { type: 'checkbox', checked: S.fx.glow, onchange: e => { S.fx.glow = e.target.checked; } }), 'Glow néon'),
-      el('label', {}, 'Lueur', select(GLOW_COLORS, S.fx.glowColor, v => { S.fx.glowColor = v; S.fx.glow = true; draw(); })))));
+      el('div', { id: 'dmsg', class: depth.status === 'error' ? 'err' : depth.status === 'done' ? 'ok' : 'muted' }, depthText()),
+      busy ? el('div', { class: 'progress' }, el('div', { id: 'dbar', style: `width:${depth.total ? 100 * depth.done / depth.total : 2}%` })) : null) : null);
 }
 
 // ---------- Sons ----------
@@ -179,60 +160,49 @@ function ensureAudio() {
   sfx.connect(dest); sfx.connect(ac.destination);
   return audio = { ac, dest, sfx };
 }
-// L'AudioContext ne peut démarrer qu'après une action de l'utilisateur.
 document.addEventListener('pointerdown', () => { ensureAudio().ac.resume(); }, { once: true });
-
-function sfxTimeline(cfg) {
+function sfxTimeline(c) {
   const ev = [];
-  if (cfg.title) ev.push({ t: cfg.titleStart, kind: DEFAULT_SFX.title });
-  for (const m of cfg.motions) for (const e of sfxEvents(m)) ev.push({ t: m.start + e.t, kind: e.kind });
-  for (const m of cfg.media || []) ev.push({ t: m.start, kind: m.layout === 'full' ? 'whoosh' : DEFAULT_SFX.media });
+  if (c.hook) ev.push({ t: c.titleStart, kind: DEFAULT_SFX.title });
+  for (const m of c.motions) for (const e of sfxEvents(m)) ev.push({ t: m.start + e.t, kind: e.kind });
+  for (const m of c.media || []) ev.push({ t: m.start, kind: m.layout === 'full' ? 'whoosh' : DEFAULT_SFX.media });
   return ev.sort((a, b) => a.t - b.t);
 }
 let lastT = 0;
-function tickSfx(cfg, t) {
+function tickSfx(c, t) {
   if (!S.sfx.on || !audio || audio.ac.state !== 'running') { lastT = t; return; }
   if (t < lastT || t - lastT > .5) { lastT = t; return; }
-  for (const e of sfxTimeline(cfg)) if (e.kind && e.t > lastT && e.t <= t) playSfx(audio.ac, audio.sfx, e.kind, S.sfx.vol);
+  for (const e of sfxTimeline(c)) if (e.kind && e.t > lastT && e.t <= t) playSfx(audio.ac, audio.sfx, e.kind, S.sfx.vol);
   lastT = t;
 }
 
 // ---------- Boucle d'aperçu ----------
-let live = []; // { ctx, W, H, cfg: () => o, loop: secondes | null (= temps de la vidéo) }
+let live = [];
 const mainCtx = $('main').getContext('2d');
-
 function frame(now) {
   try { drawFrame(now); } catch (e) { console.error(e); }
   requestAnimationFrame(frame);
 }
-
 function drawFrame(now) {
-  const clock = now / 1000;
-  const mc = $('main');
-  if (!S.exporting) updateDepth(video, depthActive());
-  // Saut des passages coupés pendant la lecture.
+  const clock = now / 1000, mc = $('main');
+  if (!S.exporting) updateDepth(video, S.depthOn);
   if (!video.paused && !S.exporting) {
-    const seg = activeCuts().find(([a, b]) => video.currentTime >= a && video.currentTime < b - .02);
+    const seg = S.cutSegs.find(([a, b]) => video.currentTime >= a && video.currentTime < b - .02);
     if (seg) video.currentTime = seg[1] >= video.duration - .05 ? 0 : seg[1];
   }
-  const styleStep = [ST.hook, ST.font, ST.colors, ST.title].includes(S.step);
-  if (styleStep) {
-    render(mainCtx, mc.width, mc.height, clock % (S.titleDur + .8), { ...base(), motions: [], media: [], captions: null, noSync: true });
-  } else if (S.step === ST.import) {
-    render(mainCtx, mc.width, mc.height, 0, { ...base(), title: null, motions: [], media: [], captions: null, noSync: true });
-  } else {
-    const cfg = currentCfg(), t = video.currentTime || 0;
-    render(mainCtx, mc.width, mc.height, t, cfg);
-    if (!video.paused && !S.exporting) tickSfx(cfg, t);
-  }
-  for (const l of live) {
-    try { render(l.ctx, l.W, l.H, l.loop ? clock % l.loop : video.currentTime || 0, { ...l.cfg(), noSync: true }); } catch (e) { console.error(e); }
-  }
-  $('time').textContent = `${fmt(video.currentTime)} / ${fmt(video.duration)}`;
+  const t = video.currentTime || 0;
+  // Pendant le choix du look, l'accroche reste affichée pour voir l'effet de chaque clic.
+  const pinHook = S.tab === 'look' && S.lookStep <= 3;
+  const c = cfg(pinHook ? { titleStart: t - S.titleDur * .5 } : {});
+  render(mainCtx, mc.width, mc.height, t, c);
+  if (!video.paused && !S.exporting) tickSfx(c, t);
+  for (const l of live) { try { l.draw(clock); } catch (e) { console.error(e); } }
+  $('time').textContent = `${fmt(t)} / ${fmt(video.duration)}`;
   drawTimeline();
+  if (S.tab === 'edit') highlightNow(t);
 }
 
-// Timeline : volume de la voix, coupes (rouge), titre et motions (jaune), médias (bleu), tête de lecture.
+// Timeline : volume, coupes (rouge), éléments (couleur), médias (bleu), tête de lecture.
 let wave = null;
 function buildWave() {
   const c = $('timeline'), W = c.width, H = c.height, db = S.A.db;
@@ -240,7 +210,7 @@ function buildWave() {
   if (!db || !db.length) return;
   const g = wave.getContext('2d');
   const lo = Math.min(...db.filter(isFinite)), hi = Math.max(...db);
-  g.fillStyle = '#555';
+  g.fillStyle = '#4a4a4a';
   for (let x = 0; x < W; x++) {
     const i0 = Math.floor(x / W * db.length), i1 = Math.max(i0 + 1, Math.floor((x + 1) / W * db.length));
     let m = -Infinity; for (let i = i0; i < i1; i++) m = Math.max(m, db[i]);
@@ -249,19 +219,16 @@ function buildWave() {
   }
 }
 function drawTimeline() {
-  const c = $('timeline'), g = c.getContext('2d'), W = c.width, H = c.height;
-  const d = video.duration || S.A.duration;
+  const c = $('timeline'), g = c.getContext('2d'), W = c.width, H = c.height, d = video.duration || S.A.duration;
   g.clearRect(0, 0, W, H);
   if (!d) return;
   if (wave) g.drawImage(wave, 0, 0);
   g.fillStyle = 'rgba(255,90,79,.35)';
-  for (const [a, b] of activeCuts()) g.fillRect(a / d * W, 0, (b - a) / d * W, H);
-  const cfg = currentCfg();
-  g.fillStyle = 'rgba(255,214,10,.9)';
-  if (cfg.title) g.fillRect(0, 2, cfg.titleDur / d * W, 8);
-  cfg.motions.forEach((m, i) => g.fillRect(m.start / d * W, 14 + (i % 2) * 10, Math.max(2, m.dur / d * W), 7));
+  for (const [a, b] of S.cutSegs) g.fillRect(a / d * W, 0, (b - a) / d * W, H);
+  g.fillStyle = 'rgba(255,255,255,.8)'; g.fillRect(0, 2, S.titleDur / d * W, 6);
+  S.items.forEach((m, i) => { g.fillStyle = CHIP_COLORS[m.type] || '#ffd60a'; g.fillRect(m.start / d * W, 12 + (i % 3) * 9, Math.max(2, m.dur / d * W), 6); });
   g.fillStyle = 'rgba(90,170,255,.95)';
-  cfg.media.forEach(m => g.fillRect(m.start / d * W, H - 12, Math.max(2, m.dur / d * W), 8));
+  mediaCfg().forEach(m => g.fillRect(m.start / d * W, H - 10, Math.max(2, m.dur / d * W), 6));
   g.fillStyle = '#fff'; g.fillRect(video.currentTime / d * W - 1, 0, 2, H);
 }
 $('timeline').addEventListener('click', e => {
@@ -269,48 +236,26 @@ $('timeline').addEventListener('click', e => {
   if (video.duration) video.currentTime = (e.clientX - r.left) / r.width * video.duration;
 });
 
-// ---------- UI ----------
-function liveCanvas(cfg, loop = null) {
+// Une vignette animée en boucle. f(clock) → { t, o } pour cette image.
+function liveCanvas(f) {
   const c = el('canvas', { width: 270, height: 480 });
-  live.push({ ctx: c.getContext('2d'), W: c.width, H: c.height, cfg, loop });
+  const ctx = c.getContext('2d');
+  live.push({ draw: clock => { const { t, o } = f(clock); render(ctx, 270, 480, t, { ...o, noSync: true }); } });
   return c;
 }
 
-function choiceGrid(items, isSel, onPick, cfgFor, extra, loop = S.titleDur + .8) {
-  const g = el('div', { class: 'grid' });
-  items.forEach((it, i) => {
-    g.append(el('div', { class: 'card clickable' + (isSel(it) ? ' sel' : ''), onclick: () => { onPick(it); draw(); } },
-      el('span', { class: 'num' }, String(i + 1)),
-      liveCanvas(() => cfgFor(it), loop),
-      el('h3', {}, it.name), extra ? extra(it) : null));
-  });
-  return g;
-}
-const styleCfg = over => ({ ...base(), motions: [], media: [], captions: null, ...over });
-
-function nextStart(dur) {
-  const end = S.taken.reduce((a, m) => Math.max(a, m.start + m.dur), S.titleDur);
-  const total = isFinite(video.duration) ? video.duration : 60;
-  return Math.max(0, Math.min(+(end + .4).toFixed(1), +(total - dur).toFixed(1)));
-}
-
-function goto(step) { S.step = clamp(step, 0, STEPS.length - 1); draw(); window.scrollTo(0, 0); }
-
+// ---------- Onglets ----------
 function draw() {
   live = [];
-  $('dots').replaceChildren(...STEPS.map((s, i) =>
-    el('button', { class: 'dot' + (i === S.step ? ' on' : i < S.step ? ' done' : ''), onclick: () => goto(i) }, `${i + 1}. ${s[1]}`)));
-  const [, , t1, t2] = STEPS[S.step];
-  $('stepText').innerHTML = `<b>Étape ${S.step + 1} sur ${STEPS.length}.</b> ${t1} <span class="muted">${t2}</span>`;
-  $('prev').disabled = S.step === 0;
-  $('next').style.display = S.step === STEPS.length - 1 ? 'none' : '';
+  const ready = S.A.status === 'done';
+  $('tabs').replaceChildren(...[['look', 'Look'], ['edit', 'Édition'], ['review', 'Revue']].map(([id, n]) =>
+    el('button', { class: S.tab === id ? 'on' : '', disabled: !ready || null, onclick: () => { S.tab = id; S.sel = null; draw(); } }, n)));
   const C = $('content'); C.replaceChildren();
-  ({
-    import: stepImport, media: stepMedia, proposals: stepProposals, hook: stepHook, font: stepFont, colors: stepColors,
-    title: stepTitle, motions: stepMotions, captions: stepCaptions, export: stepExport,
-  })[STEPS[S.step][0]](C);
+  if (!ready) return importScreen(C);
+  ({ look: lookTab, edit: editTab, review: reviewTab })[S.tab](C);
 }
 
+// ---------- Import ----------
 function dropZone(title, hint, accept, multiple, onFiles, disabled = false) {
   const input = el('input', { type: 'file', accept, hidden: '', ...(multiple ? { multiple: '' } : {}), onchange: e => { onFiles([...e.target.files]); e.target.value = ''; } });
   const d = el('div', { class: 'drop', onclick: () => !disabled && input.click() }, el('strong', {}, title), hint, input);
@@ -319,37 +264,419 @@ function dropZone(title, hint, accept, multiple, onFiles, disabled = false) {
   d.addEventListener('drop', e => { e.preventDefault(); d.classList.remove('over'); if (!disabled && e.dataTransfer.files.length) onFiles([...e.dataTransfer.files]); });
   return d;
 }
-
-function stepImport(C) {
+function importScreen(C) {
   const busy = S.A.status === 'running';
-  C.append(dropZone(S.fileName ? 'Vidéo chargée — clique pour en changer' : 'Dépose ta vidéo ici',
-    'ou clique pour choisir un fichier (.mp4, .mov, .webm)', 'video/*', false, f => loadFile(f[0]), busy));
+  C.append(el('p', { class: 'lead' }, el('b', {}, 'Importe ta vidéo. '), 'Je la transcris, je repère ce que tu dis et je fais un premier montage. Ensuite tu choisis ton look et tu corriges tout.'));
+  C.append(dropZone(S.fileName || 'Dépose ta vidéo ici', 'ou clique pour choisir un fichier (.mp4, .mov, .webm)', 'video/*', false, f => loadFile(f[0]), busy));
   C.append(el('div', { class: 'options' },
-    el('label', {}, el('input', { type: 'checkbox', checked: S.opts.transcribe, disabled: busy || null, onchange: e => { S.opts.transcribe = e.target.checked; } }),
-      'Transcrire la voix (sous-titres + propositions basées sur ce que tu dis)'),
+    el('label', {}, el('input', { type: 'checkbox', checked: S.opts.transcribe, disabled: busy || null, onchange: e => { S.opts.transcribe = e.target.checked; } }), 'Transcrire la voix'),
     el('label', {}, 'Langue', select(LANGS, S.opts.lang, v => { S.opts.lang = v; }, { disabled: busy || null }))));
-  C.append(el('p', { class: 'muted' }, 'La première transcription télécharge le modèle Whisper (~200 Mo, une seule fois, gardé en cache par le navigateur). Tout tourne sur ton ordinateur.'));
-  if (S.A.status !== 'idle') {
-    C.append(el('div', { class: 'panel' },
-      el('h2', {}, 'Analyse'),
-      el('div', { id: 'amsg', class: S.A.status === 'error' ? 'err' : '' }, S.A.msg),
-      el('div', { class: 'progress' }, el('div', { id: 'abar', style: `width:${S.A.frac * 100}%` })),
-      S.A.asrError ? el('p', { class: 'err' }, 'Transcription impossible : ' + S.A.asrError) : null,
-      busy && S.A.transcribing ? el('button', { class: 'btn', onclick: () => cancelTranscription() }, 'Passer la transcription') : null,
-      S.A.status === 'done' ? el('div', { class: 'row-btns' },
-        el('button', { class: 'btn', onclick: () => goto(ST.media) }, '+ Ajouter des images'),
-        el('button', { class: 'btn yellow', onclick: () => goto(ST.proposals) }, 'Voir les propositions →')) : null));
-  }
+  C.append(el('p', { class: 'muted' }, 'La première transcription télécharge le modèle Whisper (~200 Mo, une seule fois). Tout tourne sur ton ordinateur.'));
+  if (S.A.status !== 'idle') C.append(el('div', { class: 'panel' },
+    el('div', { id: 'amsg', class: S.A.status === 'error' ? 'err' : '' }, S.A.msg),
+    el('div', { class: 'progress' }, el('div', { id: 'abar', style: `width:${S.A.frac * 100}%` })),
+    busy && S.A.transcribing ? el('button', { class: 'btn', onclick: () => cancelTranscription() }, 'Passer la transcription') : null));
 }
-
 function setProgress(msg, frac) {
   S.A.msg = msg; if (frac != null) S.A.frac = frac;
   const m = $('amsg'), b = $('abar');
   if (m) m.textContent = msg;
   if (b && frac != null) b.style.width = frac * 100 + '%';
 }
+function asrProgress(p) {
+  if (p.phase === 'download') setProgress(`Téléchargement du modèle Whisper… ${(p.loaded / 1e6).toFixed(0)} / ${(p.total / 1e6).toFixed(0)} Mo`, .1 + .3 * p.loaded / p.total);
+  else setProgress(`Transcription… ${fmt(p.done)} / ${fmt(p.total)}`, .4 + .6 * p.done / p.total);
+}
 
-// ---------- Médias ----------
+async function loadFile(file) {
+  if (!file) return;
+  cancelTranscription(); resetMatting();
+  Object.assign(S, { file, fileName: file.name, items: [], sel: null, tab: 'look', lookStep: 0 });
+  $('filename').textContent = file.name;
+  video.src = URL.createObjectURL(file);
+  await new Promise(r => video.addEventListener('loadedmetadata', r, { once: true }));
+  const A = S.A = { status: 'running', msg: 'Lecture de l\'audio…', frac: .02, duration: video.duration, pcm: null, db: null, peaks: [], words: [], asrError: '' };
+  wave = null; draw();
+  try {
+    A.pcm = await decodeAudio(file);
+    if (A.pcm) { A.db = loudness(A.pcm); A.peaks = findPeaks(A.db); recomputeSilences(); buildWave(); }
+    setProgress(A.pcm ? 'Audio analysé.' : 'Pas de piste audio détectée.', .1);
+    if (A.pcm && S.opts.transcribe) {
+      A.transcribing = true; draw();
+      try { A.words = await transcribe(A.pcm, A.db, { lang: S.opts.lang, onProgress: asrProgress }); }
+      catch (e) { if (e.message !== 'cancelled') A.asrError = e.message; }
+      A.transcribing = false;
+    }
+    // Les mots éditables, avec les corrections déjà retenues dans le dictionnaire.
+    S.words = A.words.map(w => { const fix = S.dict[keyW(w.w)]; return { ...w, w: fix ? withCore(w.w, fix) : w.w, orig: w.w, fixed: !!fix }; });
+    setProgress('Montage automatique…', .98);
+    replan(true);
+    await captureStills();
+    A.status = 'done';
+    video.currentTime = 0;
+    draw();
+  } catch (e) {
+    A.status = 'error'; setProgress('Erreur d\'analyse : ' + e.message, 0); draw();
+  }
+}
+
+// Montage automatique avec la boîte à outils du look (garde ce que tu as fait à la main ou importé).
+function replan(first = false) {
+  refreshDerived();
+  const kept = S.items.filter(it => it.from !== 'auto');
+  const blocked = [...mediaCfg(), ...kept];
+  const r = autoPlan({ ...S.A, words: S.words }, S.look, blocked, S.uid);
+  S.uid += r.items.length + 1;
+  S.items = [...kept, ...r.items].sort((a, b) => a.start - b.start);
+  S.moments = r.moments; S.topic = r.topic; S.sentences = r.sentences;
+  if (first) S.hook = hookFrom(r.sentences);
+}
+
+// Images fixes de la vidéo : fond des vignettes du look et photos de l'Orbit / Carousel.
+async function captureStills() {
+  const v = Object.assign(document.createElement('video'), { src: URL.createObjectURL(S.file), muted: true, playsInline: true, preload: 'auto' });
+  try {
+    await new Promise((res, rej) => { v.addEventListener('loadeddata', res, { once: true }); v.addEventListener('error', rej, { once: true }); });
+    const w = 270, h = Math.round(w * v.videoHeight / v.videoWidth), d = v.duration;
+    const grab = async t => { await new Promise(res => { v.addEventListener('seeked', res, { once: true }); v.currentTime = Math.min(d - .05, Math.max(0, t)); }); return createImageBitmap(v, { resizeWidth: w, resizeHeight: h }); };
+    // Échantillon : un sous-titre de 3 mots ou plus au premier tiers de la vidéo.
+    const ch = S.chunks.find(c => c.s > d * .2 && c.words.length >= 3) || S.chunks[0];
+    const t = ch ? ch.s : d * .3;
+    S.sample = { t, end: ch ? ch.e : t + 2, frame: await grab(t + .2) };
+    const imgs = S.media.filter(m => m.kind === 'image' && m.ready).map(m => m.el);
+    S.photos = imgs.length >= 3 ? imgs : [];
+    for (const k of [.15, .3, .45, .6, .75, .9]) if (S.photos.length < 6) S.photos.push(await grab(d * k));
+  } catch { /* les vignettes utilisent l'image en cours */ }
+  v.removeAttribute('src');
+}
+
+// ---------- Onglet Look ----------
+function lookTab(C) {
+  C.append(el('div', { class: 'steps' }, ...LOOK_STEPS.map((n, i) => el('button', { class: S.lookStep === i ? 'on' : '', onclick: () => { S.lookStep = i; S.visited.add(i); draw(); } },
+    `${i + 1} ${n}`, S.visited.has(i) && i !== S.lookStep ? el('span', { class: 'ok' }, '✓') : null))));
+  [lookColors, lookFonts, lookHook, lookCaptions, lookElements, lookMotion, lookReview][S.lookStep](C);
+  if (S.lookStep < 6) C.append(el('div', { class: 'row-btns', style: 'margin-top:14px' },
+    el('button', { class: 'btn primary', onclick: () => { S.lookStep++; S.visited.add(S.lookStep); draw(); } }, `Suivant : ${LOOK_STEPS[S.lookStep + 1]} →`)));
+}
+
+// Vignette « look » : l'échantillon de ta vidéo avec l'accroche et les sous-titres, dans une variante du look.
+function sampleCard(over) {
+  return liveCanvas(clock => {
+    const sm = S.sample || { t: 0, end: 2, frame: null };
+    const t = sm.t + clock % Math.max(1.5, Math.min(3.5, sm.end - sm.t + .6));
+    const look = { ...S.look, ...over };
+    return { t, o: cfg({ look, motions: [], media: [], depth: null, frame: sm.frame, titleStart: t - S.titleDur * .5,
+      captions: S.chunks.length ? { style: look.captions, pos: S.captions.pos, chunks: S.chunks } : null }) };
+  });
+}
+
+function choiceGrid(items, isSel, onPick, over, extra) {
+  const g = el('div', { class: 'grid' });
+  items.forEach((it, i) => g.append(el('div', { class: 'card' + (isSel(it) ? ' sel' : ''), onclick: () => { onPick(it); draw(); } },
+    el('span', { class: 'num' }, String(i + 1)), sampleCard(over(it)), el('h3', {}, it.name), el('p', {}, it.desc || ''), extra ? extra(it) : null,
+    el('button', { class: 'take' }, isSel(it) ? 'Pris ✓' : 'Prendre'))));
+  return g;
+}
+
+function applyPreset(p) {
+  S.look = { ...S.look, ...p, preset: p.id, fx: { ...p.fx } };
+  if (p.depth && !S.depthOn) { S.depthOn = true; startDepth(); }
+}
+
+function lookColors(C) {
+  C.append(el('p', { class: 'lead' }, el('b', {}, 'Choisis tes couleurs. '), 'Chaque étape suivante les utilise.'));
+  C.append(el('div', { class: 'chips-row' }, el('span', { class: 'muted' }, 'Départ rapide :'),
+    ...PRESETS.map(p => el('button', { class: 'chip-btn' + (S.look.preset === p.id ? ' on' : ''), title: p.desc, onclick: () => { applyPreset(p); draw(); } }, p.name))));
+  C.append(el('p', { class: 'muted', style: 'margin-top:-6px' }, 'Un départ rapide remplit toutes les étapes avec un look prêt. Tu peux encore tout changer.'));
+  C.append(choiceGrid(PALETTES, p => p.id === S.look.pal, p => { S.look = { ...S.look, pal: p.id, preset: '' }; }, p => ({ pal: p.id }),
+    p => el('div', { class: 'swatches' }, ...[p.accent, p.accent2, p.card, p.paper].map(c => el('i', { style: `background:${c}` })))));
+}
+function lookFonts(C) {
+  C.append(el('p', { class: 'lead' }, el('b', {}, 'Choisis tes polices. '), 'Elles servent à l\'accroche, aux sous-titres, aux cartes et aux animations. Celles avec « manuscrit » ajoutent une écriture à la main sur les mots d\'accent.'));
+  C.append(choiceGrid(FONT_PAIRS, f => f.id === S.look.fonts, f => { S.look = { ...S.look, fonts: f.id, preset: '' }; }, f => ({ fonts: f.id })));
+}
+function lookHook(C) {
+  C.append(el('p', { class: 'lead' }, el('b', {}, 'Ton accroche. '), 'Les mots affichés au début de la vidéo.'));
+  C.append(el('div', { class: 'options' },
+    el('label', {}, 'Ligne 1', el('input', { type: 'text', value: S.hook.l1, oninput: e => { S.hook.l1 = e.target.value; } })),
+    el('label', {}, 'Ligne 2', el('input', { type: 'text', value: S.hook.l2, oninput: e => { S.hook.l2 = e.target.value; } })),
+    el('label', {}, 'Durée', el('input', { type: 'number', min: '1', max: '10', step: '0.5', value: S.titleDur, oninput: e => { S.titleDur = clamp(+e.target.value || 3, 1, 10); } }), 's')));
+  C.append(choiceGrid(HOOK_STYLES, h => h.id === S.look.hook, h => { S.look = { ...S.look, hook: h.id, preset: '' }; if (h.id === 'depth' && !S.depthOn) { S.depthOn = true; startDepth(); } }, h => ({ hook: h.id })));
+  C.append(depthPanel());
+}
+function lookCaptions(C) {
+  C.append(el('p', { class: 'lead' }, el('b', {}, 'Tes sous-titres. '), S.chunks.length ? 'Générés depuis ta voix, mot à mot. Le texte se corrige dans l\'onglet Édition.' : 'Pas de transcription : pas de sous-titres.'));
+  C.append(el('div', { class: 'options' },
+    el('label', {}, el('input', { type: 'checkbox', checked: S.captions.on, onchange: e => { S.captions.on = e.target.checked; } }), 'Afficher les sous-titres'),
+    el('label', {}, 'Position', el('input', { type: 'range', min: '0.35', max: '0.88', step: '0.01', value: S.captions.pos, oninput: e => { S.captions.pos = +e.target.value; } }))));
+  C.append(choiceGrid(CAPTION_STYLES, c => c.id === S.look.captions, c => { S.look = { ...S.look, captions: c.id, preset: '' }; }, c => ({ captions: c.id })));
+}
+
+// Exemple d'un élément avec un vrai moment de ta vidéo quand il y en a un qui lui correspond.
+const SAMPLE_F = {
+  note: { text: 'à retenir' }, colorcard: { top: 'l\'idée clé' }, stamp: { text: 'important' }, statcard: { label: 'le chiffre', value: '100', unit: 'au total' },
+  checklist: { title: 'Les étapes', items: ['Première idée', 'Deuxième idée', 'Troisième idée'] }, versus: { bad: 'Ce qu\'on croit', good: 'Ce qui marche' },
+  emoji: { emoji: '💡', word: 'idée' }, screen: { title: 'Mon appli', lines: ['Étape 1', 'Étape 2', 'Étape 3'] }, lower: { name: 'Ton nom', role: 'créateur' },
+  shrink: { top: 'l\'idée', bottom: 'en une phrase' }, comment: { name: 'un abonné', text: 'Tu peux faire une partie 2 ?' },
+  wordreveal: { text: 'une phrase forte à retenir', mark: 'retenir' }, counter: { value: '1000', label: 'vues' }, kinetic: { text: 'Ta phrase forte ici.' }, beat: { words: 'UN DEUX TROIS' },
+};
+const KIND_FOR = { statcard: 'number', counter: 'number', checklist: 'list', versus: 'contrast', emoji: 'emoji', comment: 'question' };
+function sampleItem(type) {
+  const need = KIND_FOR[type];
+  const m = S.moments.find(x => need ? x.kind === need : ['keyword', 'punch'].includes(x.kind));
+  if (m) return { ...itemFromMoment(m, type, S.words, 0), key: 'sample-' + type, start: 0 };
+  return { key: 'sample-' + type, type, start: 0, dur: CATALOG[type].dur, f: SAMPLE_F[type] || {}, variant: 0 };
+}
+function toolboxGrid(C, list, key) {
+  const g = el('div', { class: 'grid' });
+  list.forEach((d, i) => {
+    const on = (S.look[key] || []).includes(d.id);
+    const it = sampleItem(d.id);
+    g.append(el('div', { class: 'card' + (on ? ' sel' : ' off'), onclick: () => {
+      const set = new Set(S.look[key] || []); on ? set.delete(d.id) : set.add(d.id);
+      S.look = { ...S.look, [key]: [...set], preset: '' }; draw();
+    } },
+      el('span', { class: 'num' }, String(i + 1)),
+      liveCanvas(clock => {
+        const sm = S.sample || { t: 0, frame: null }, lt = clock % (it.dur + .8);
+        return { t: sm.t + lt, o: cfg({ hook: null, captions: null, media: [], depth: null, frame: sm.frame, motions: [{ ...it, start: sm.t + .2 }] }) };
+      }),
+      el('h3', {}, d.name), el('p', {}, d.desc), el('button', { class: 'take' }, on ? 'Pris ✓' : 'Prendre')));
+  });
+  C.append(g);
+}
+function lookElements(C) {
+  C.append(el('p', { class: 'lead' }, el('b', {}, 'Coche les éléments que tu veux dans tes montages. '), 'Montrés dans tes couleurs et tes polices, avec ce que tu dis quand c\'est possible.'));
+  toolboxGrid(C, ELEMENTS, 'elements');
+}
+function lookMotion(C) {
+  C.append(el('p', { class: 'lead' }, el('b', {}, 'Coche les mouvements que tu veux. '), 'Dessinés en direct sur ta vidéo.'));
+  const fx = S.look.fx || {};
+  C.append(el('div', { class: 'options' },
+    el('label', {}, el('input', { type: 'checkbox', checked: fx.pop, onchange: e => { S.look = { ...S.look, fx: { ...fx, pop: e.target.checked } }; } }), 'Le mot clé grossit quand tu le dis'),
+    el('label', {}, el('input', { type: 'checkbox', checked: fx.slide, onchange: e => { S.look = { ...S.look, fx: { ...fx, slide: e.target.checked } }; } }), 'Entrées glissées avec flou'),
+    el('label', {}, el('input', { type: 'checkbox', checked: fx.glow, onchange: e => { S.look = { ...S.look, fx: { ...fx, glow: e.target.checked } }; } }), 'Lueur néon')));
+  toolboxGrid(C, MOTIONS, 'motion');
+}
+function lookReview(C) {
+  const L = lookContext(S.look);
+  C.append(el('p', { class: 'lead' }, el('b', {}, 'Ton look est prêt. '), 'Le montage automatique peut être refait avec ces éléments ; ce que tu as ajouté à la main est gardé.'));
+  C.append(el('div', { class: 'panel' },
+    el('p', {}, `Couleurs : ${L.P.name} · Polices : ${L.pair.name} · Accroche : ${HOOK_STYLES.find(h => h.id === S.look.hook)?.name} · Sous-titres : ${CAPTION_STYLES.find(c => c.id === S.look.captions)?.name}`),
+    el('p', { class: 'muted' }, 'Éléments : ' + ((S.look.elements || []).map(id => CATALOG[id].name).join(', ') || 'aucun')),
+    el('p', { class: 'muted' }, 'Motion : ' + ((S.look.motion || []).map(id => CATALOG[id].name).join(', ') || 'aucun')),
+    el('div', { class: 'row-btns' },
+      el('button', { class: 'btn', onclick: () => { replan(); draw(); } }, '↻ Refaire le montage auto avec ce look'),
+      el('button', { class: 'btn yellow', onclick: () => { S.tab = 'edit'; draw(); } }, 'Corriger le texte et les animations →'))));
+}
+
+// ---------- Onglet Édition ----------
+const itemByUid = uid => S.items.find(i => i.uid === uid);
+function sentencesOf(words) {
+  const out = []; let cur = null;
+  words.forEach((w, i) => {
+    if (!cur || (i > 0 && w.s - words[i - 1].e > 1.2)) { cur = { i0: i, words: [] }; out.push(cur); }
+    cur.words.push(i);
+    if (/[.?!]$/.test(w.w)) cur = null;
+  });
+  return out;
+}
+// Mot d'ancrage d'un élément (le premier mot dit pendant l'élément).
+const anchorOf = it => it.w0 != null ? it.w0 : wordIndexAt(S.words, it.start + .2);
+
+function editTab(C) {
+  C.append(el('div', { class: 'row-btns', style: 'margin-bottom:12px' },
+    el('button', { class: 'btn', onclick: copyForClaude }, '📋 Copier pour Claude'),
+    el('button', { class: 'btn', onclick: importPlanModal }, '📥 Importer un plan'),
+    el('button', { class: 'btn', onclick: () => { replan(); draw(); } }, '↻ Montage auto'),
+    el('button', { class: 'btn', onclick: dictModal }, `📖 Dictionnaire (${Object.keys(S.dict).length})`),
+    el('span', { class: 'muted', style: 'margin-left:auto' }, `${S.items.length} animation(s) · ${S.words.filter(w => w.cut).length} mot(s) coupé(s)`)));
+  C.append(el('div', { class: 'options' },
+    el('label', {}, 'Accroche', el('input', { type: 'text', value: S.hook.l1, oninput: e => { S.hook.l1 = e.target.value; } })),
+    el('input', { type: 'text', value: S.hook.l2, oninput: e => { S.hook.l2 = e.target.value; } })));
+  C.append(inspector());
+  if (!S.words.length) C.append(el('div', { class: 'panel' }, el('p', { class: 'muted' }, 'Pas de transcription : ajoute des animations à la tête de lecture.'), addHere()));
+  else C.append(doc());
+  C.append(mediaSection());
+}
+
+function addHere() {
+  const types = [...(S.look.elements || []), ...(S.look.motion || [])];
+  const rest = Object.keys(CATALOG).filter(k => !types.includes(k));
+  return el('div', { class: 'options' }, 'Ajouter à la tête de lecture :',
+    select([['', '+ Animation…'], ...types.map(k => [k, CATALOG[k].name]), ...rest.map(k => [k, CATALOG[k].name + ' (hors look)'])], '', v => {
+      if (!v) return;
+      const it = newItem(v, wordIndexAt(S.words, video.currentTime), null, video.currentTime);
+      S.items.push(it); S.sel = { kind: 'item', uid: it.uid }; draw();
+    }));
+}
+
+// Champ principal de chaque type (celui que remplissent les mots sélectionnés).
+const MAIN_FIELD = { note: 'text', colorcard: 'top', stamp: 'text', comment: 'text', wordreveal: 'text', kinetic: 'text', beat: 'words', counter: 'value', shrink: 'top', lower: 'name', screen: 'title', statcard: 'value' };
+
+// Nouvel élément posé sur des mots (texte prérempli avec les mots sélectionnés).
+function newItem(type, a, b, at) {
+  const def = CATALOG[type];
+  const text = b != null ? S.words.slice(a, b + 1).map(w => w.w).join(' ').replace(/[,;:]$/, '') : '';
+  const f = JSON.parse(JSON.stringify(SAMPLE_F[type] || {}));
+  const set = MAIN_FIELD[type];
+  if (set && text) f[set] = type === 'beat' ? text.toUpperCase() : text;
+  if (type === 'checklist' && text) f.items = text.split(/,|\set\s/).map(s => s.trim()).filter(Boolean);
+  if (type === 'statcard' && text) { const n = text.match(/\d+(?:[.,]\d+)?/); f.value = n ? n[0] : text; f.label = ''; f.unit = ''; }
+  if (type === 'wordreveal' && text) f.mark = '';
+  const start = at != null ? at : (S.words[a]?.s ?? 0) - .15;
+  const end = b != null ? (S.words[b]?.e ?? start) + .5 : start + def.dur;
+  return { uid: S.uid++, type, start: +Math.max(0, start).toFixed(2), dur: +Math.max(def.dur, end - start).toFixed(2), f, variant: 0, w0: a, from: 'manual' };
+}
+
+function doc() {
+  const d = el('div', { class: 'doc', id: 'doc' });
+  const chipsAt = {};
+  for (const it of S.items) (chipsAt[anchorOf(it)] ||= []).push(it);
+  const selItem = S.sel?.kind === 'item' ? itemByUid(S.sel.uid) : null;
+  for (const sent of sentencesOf(S.words)) {
+    const p = el('p', {}, el('span', { class: 'ts', onclick: () => { video.currentTime = S.words[sent.i0].s; } }, fmt(S.words[sent.i0].s)));
+    for (const i of sent.words) {
+      const w = S.words[i];
+      if (i > 0 && w.s - S.words[i - 1].e > .7) {
+        const a = S.words[i - 1].e, b = w.s, cut = S.cutSegs.some(([x, y]) => x <= a + .15 && y >= b - .15);
+        p.append(el('span', { class: 'pause' + (cut ? ' cut' : ''), title: cut ? 'Blanc coupé' : 'Blanc', onclick: () => { video.currentTime = a; } }, ` · ${(b - a).toFixed(1)} s · `));
+      }
+      for (const it of chipsAt[i] || []) {
+        p.append(el('span', { class: 'chip' + (selItem === it ? ' on' : ''), style: `background:${CHIP_COLORS[it.type] || '#ffd60a'}`, title: 'Modifier cette animation',
+          onmouseup: e => e.stopPropagation(),
+          onclick: e => { e.stopPropagation(); S.sel = { kind: 'item', uid: it.uid }; video.currentTime = it.start; draw(); } }, '▶ ' + CATALOG[it.type].name));
+      }
+      const inSel = S.sel?.kind === 'words' && i >= S.sel.a && i <= S.sel.b;
+      const inRange = selItem && w.s >= selItem.start - .05 && w.s <= selItem.start + selItem.dur;
+      p.append(el('span', { class: 'wd' + (w.cut ? ' cut' : '') + (w.fixed ? ' fixed' : '') + (inSel ? ' sel' : '') + (inRange ? ' inrange' : ''), 'data-i': i,
+        style: inRange ? `--chip:${CHIP_COLORS[selItem.type]}` : null, title: w.fixed ? `Transcrit : « ${w.orig} »` : null }, w.w), ' ');
+    }
+    d.append(p);
+  }
+  // Sélection : un mot (clic) ou plusieurs (glisser). Double-clic : corriger le mot sur place.
+  d.addEventListener('mouseup', () => {
+    const s = window.getSelection();
+    const idx = n => { const e = n?.nodeType === 3 ? n.parentElement : n; const w = e?.closest?.('.wd'); return w ? +w.dataset.i : null; };
+    let a = idx(s.anchorNode), b = idx(s.focusNode);
+    if (a == null && b == null) return;
+    if (a == null) a = b; if (b == null) b = a;
+    if (a > b) [a, b] = [b, a];
+    S.sel = { kind: 'words', a, b }; S.lastWord = a;
+    video.currentTime = S.words[a].s;
+    s.removeAllRanges();
+    draw();
+  });
+  d.addEventListener('dblclick', e => { const w = e.target.closest('.wd'); if (w) editWordInline(+w.dataset.i); });
+  return d;
+}
+let nowIdx = -1;
+function highlightNow(t) {
+  const i = S.words.findIndex(w => t >= w.s && t <= w.e + .05);
+  if (i === nowIdx && document.querySelector('.wd.now')) return;
+  document.querySelector('.wd.now')?.classList.remove('now');
+  nowIdx = i;
+  if (i >= 0) document.querySelector(`.wd[data-i="${i}"]`)?.classList.add('now');
+}
+
+function fixWord(i, text, everywhere) {
+  const w = S.words[i], k = keyW(w.orig);
+  const apply = x => { x.w = withCore(x.w, core(text)); x.fixed = keyW(x.orig) !== keyW(x.w); };
+  if (everywhere) {
+    S.words.forEach(x => { if (keyW(x.orig) === k) apply(x); });
+    if (core(text) && k !== core(text).toLowerCase()) { S.dict[k] = core(text); saveDict(); }
+  } else { w.w = text; w.fixed = keyW(w.orig) !== keyW(w.w); }
+  refreshDerived();
+}
+function editWordInline(i) {
+  const span = document.querySelector(`.wd[data-i="${i}"]`);
+  if (!span) return;
+  const input = el('input', { type: 'text', value: S.words[i].w, style: 'width:' + Math.max(70, span.offsetWidth + 30) + 'px' });
+  span.replaceWith(input); input.focus(); input.select();
+  let closed = false;
+  const done = save => { if (closed) return; closed = true; if (save && input.value.trim()) fixWord(i, input.value.trim(), false); draw(); };
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') done(true); if (e.key === 'Escape') done(false); });
+  input.addEventListener('blur', () => done(true));
+  input.addEventListener('mouseup', e => e.stopPropagation());
+}
+
+// Panneau d'édition : le mot ou les mots sélectionnés, ou l'animation sélectionnée.
+function inspector() {
+  const box = el('div', { class: 'inspector' });
+  if (S.sel?.kind === 'item' && itemByUid(S.sel.uid)) { itemInspector(box, itemByUid(S.sel.uid)); return box; }
+  if (S.sel?.kind === 'words' && S.words.length) {
+    const { a, b } = S.sel, one = a === b, w = S.words[a];
+    const allCut = S.words.slice(a, b + 1).every(x => x.cut);
+    box.append(el('h2', {}, one ? `Mot « ${w.w} »` : `${b - a + 1} mots : « ${S.words.slice(a, b + 1).map(x => x.w).join(' ').slice(0, 70)} »`,
+      el('span', { class: 'muted' }, fmt1(w.s))));
+    if (one) {
+      const input = el('input', { type: 'text', value: w.w, style: 'min-width:180px' });
+      const every = el('input', { type: 'checkbox', checked: true });
+      const go = () => { if (input.value.trim()) { fixWord(a, input.value.trim(), every.checked); draw(); } };
+      input.addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+      const same = S.words.filter(x => keyW(x.orig) === keyW(w.orig)).length;
+      box.append(el('div', { class: 'options' }, 'Corriger :', input,
+        el('label', {}, every, same > 1 ? `partout (${same} fois) et retenir` : 'retenir pour les prochaines vidéos'),
+        el('button', { class: 'btn small primary', onclick: go }, 'Corriger'),
+        w.fixed ? el('span', { class: 'muted' }, `transcrit : « ${w.orig} »`) : null));
+    }
+    const types = [...(S.look.elements || []), ...(S.look.motion || [])];
+    const rest = Object.keys(CATALOG).filter(k => !types.includes(k));
+    box.append(el('div', { class: 'row-btns' },
+      el('button', { class: 'btn small' + (allCut ? '' : ' danger'), onclick: () => { S.words.slice(a, b + 1).forEach(x => { x.cut = !allCut; }); refreshDerived(); draw(); } },
+        allCut ? '↺ Rétablir' : '✂ Couper ' + (one ? 'ce mot' : 'ces mots')),
+      select([['', '+ Ajouter une animation ici…'], ...types.map(k => [k, CATALOG[k].name]), ...rest.map(k => [k, CATALOG[k].name + ' (hors look)'])], '', v => {
+        if (!v) return;
+        const it = newItem(v, a, one ? null : b);
+        S.items.push(it); S.items.sort((x, y) => x.start - y.start); S.sel = { kind: 'item', uid: it.uid }; draw();
+      }),
+      el('button', { class: 'btn small', onclick: () => { S.sel = null; draw(); } }, 'Fermer')));
+    return box;
+  }
+  box.append(el('h2', {}, 'Comment corriger'),
+    el('p', { class: 'muted', style: 'margin:0' }, 'Clique sur un mot pour le corriger ou le couper. Glisse sur plusieurs mots pour les couper ou poser une animation dessus. Double-clic pour corriger directement. Clique sur une étiquette ▶ pour modifier une animation.'));
+  return box;
+}
+
+function itemInspector(box, it) {
+  const def = CATALOG[it.type];
+  const upd = () => { if (it.from === 'auto') it.from = 'edited'; };
+  box.append(el('h2', {}, el('span', { class: 'chip', style: `background:${CHIP_COLORS[it.type]}` }, def.name),
+    el('span', { class: 'muted' }, `${fmt1(it.start)} → ${fmt1(it.start + it.dur)}`)));
+  const fields = el('div', { class: 'fields' });
+  fields.append(el('label', {}, 'Type', select(Object.values(CATALOG).map(d => [d.id, d.name]), it.type, v => {
+    const fresh = newItem(v, anchorOf(it), null, it.start); S.uid--;
+    it.type = v; it.f = { ...fresh.f, ...pickText(it.f, v) }; it.dur = Math.max(it.dur, CATALOG[v].dur); upd(); draw();
+  })));
+  fields.append(el('label', {}, 'Variante', select([[0, 'A'], [1, 'B']], it.variant || 0, v => { it.variant = +v; upd(); })));
+  for (const [k, label, kind] of def.fields) {
+    const v = it.f?.[k];
+    fields.append(el('label', { class: kind === 'list' || ['text', 'top', 'bad', 'good', 'words'].includes(k) ? 'wide' : '' }, label,
+      kind === 'list'
+        ? el('textarea', { rows: '3', value: Array.isArray(v) ? v.join('\n') : (v || ''), oninput: e => { it.f = { ...it.f, [k]: e.target.value.split('\n') }; upd(); } })
+        : el('input', { type: 'text', value: v ?? '', oninput: e => { it.f = { ...it.f, [k]: e.target.value }; upd(); } })));
+  }
+  if (it.type === 'screen' && S.media.length) fields.append(el('label', { class: 'wide' }, 'Afficher un de tes médias',
+    select([['', 'Non, du texte'], ...S.media.map(m => [m.id, m.name])], it.mediaId || '', v => { it.mediaId = v ? +v : null; upd(); })));
+  fields.append(el('label', {}, 'Début (s)', el('input', { type: 'number', step: '0.1', min: '0', value: it.start, oninput: e => { const v = parseFloat(e.target.value); if (isFinite(v)) { it.start = Math.max(0, v); it.w0 = null; upd(); } } })));
+  fields.append(el('label', {}, 'Durée (s)', el('input', { type: 'number', step: '0.1', min: '0.5', value: it.dur, oninput: e => { const v = parseFloat(e.target.value); if (isFinite(v)) { it.dur = Math.max(.5, v); upd(); } } })));
+  fields.append(el('label', {}, 'Son', select(SFX, it.sfx ?? DEFAULT_SFX[it.type] ?? '', v => { it.sfx = v; })));
+  box.append(fields);
+  box.append(el('div', { class: 'row-btns' },
+    el('button', { class: 'btn small', onclick: () => { video.currentTime = Math.max(0, it.start - .3); video.play().catch(() => {}); } }, '▶ Voir'),
+    el('button', { class: 'btn small', onclick: () => { const w = S.words[S.lastWord]; if (w) { it.start = +Math.max(0, w.s - .15).toFixed(2); it.w0 = S.lastWord; upd(); draw(); } } }, '⇤ Caler sur le dernier mot cliqué'),
+    el('button', { class: 'btn small', onclick: () => { it.start = +video.currentTime.toFixed(2); it.w0 = null; upd(); draw(); } }, '⇤ Caler sur la tête de lecture'),
+    el('button', { class: 'btn small danger', onclick: () => { S.items = S.items.filter(x => x !== it); S.sel = null; draw(); } }, '🗑 Supprimer'),
+    el('button', { class: 'btn small', onclick: () => { S.sel = null; draw(); } }, 'Fermer')));
+}
+// Garde le texte principal quand on change le type d'une animation.
+function pickText(f, type) {
+  const main = f.text || f.top || f.words || f.title || f.value || f.name || '';
+  const set = MAIN_FIELD[type];
+  return set && main ? { [set]: Array.isArray(main) ? main.join(' ') : main } : {};
+}
+
+// ---------- Médias (images, PNG, vidéos + commentaire) ----------
 async function addMedia(files) {
   for (const file of files) {
     const isVideo = file.type.startsWith('video/');
@@ -368,441 +695,127 @@ async function addMedia(files) {
     S.media.push(item);
     interpret(item);
   }
-  regenerateProposals();
+  const imgs = S.media.filter(m => m.kind === 'image' && m.ready).map(m => m.el);
+  if (imgs.length >= 3) S.photos = imgs;
   draw();
 }
-
 function interpret(item) {
-  const i = S.media.indexOf(item);
-  item.auto = interpretMedia(item, S.A.words, S.A.duration || video.duration || 30, i, S.media.length);
+  item.auto = interpretMedia(item, S.words, S.A.duration || video.duration || 30, S.media.indexOf(item), S.media.length);
 }
-
-function stepMedia(C) {
-  C.append(dropZone('Dépose tes images, PNG ou vidéos ici', 'Photos, logos, captures d\'écran, b-roll… Plusieurs fichiers à la fois.', 'image/*,video/*', true, addMedia));
-  C.append(el('div', { class: 'panel', style: 'margin-top:16px' },
-    el('h2', {}, 'Comment écrire le commentaire'),
-    el('p', { class: 'muted' },
-      'Dis simplement ce que c\'est et quand le montrer. Exemples : « logo de Claude quand je dis Claude » · « photo de mon pote Guillaume sur scène, plein écran » · ',
-      '« capture de l\'appli en haut pendant 4 s » · « petit dans le coin en bas à gauche à 0:12 » · « à la fin ». ',
-      'Les PNG détourés deviennent des stickers. Tout reste modifiable à la main.')));
-  if (!S.A.words.length && S.media.length) C.append(el('p', { class: 'muted' }, 'Astuce : avec la transcription, « quand je dis … » place le média pile sur le bon mot.'));
-  const list = el('div', { class: 'media-list' });
+function mediaSection() {
+  const box = el('div', { class: 'panel', style: 'margin-top:14px' }, el('h2', {}, 'Tes médias (images, PNG, vidéos)'),
+    el('p', { class: 'muted' }, 'Écris à côté de chacun ce que tu veux en faire : « logo quand je dis Claude », « photo de mon pote en plein écran », « capture de l\'appli en haut pendant 4 s »…'),
+    dropZone('Dépose tes images, PNG ou vidéos', 'Plusieurs fichiers à la fois.', 'image/*,video/*', true, addMedia));
   for (const m of S.media) {
     const c = mediaCfg().find(x => x.el === m.el) || {};
-    const thumb = m.kind === 'video' ? el('video', { src: m.url, muted: '', class: 'thumb' }) : el('img', { src: m.url, class: 'thumb' + (m.alpha ? ' checker' : '') });
-    const set = (k, v) => { m.override[k] = v; regenerateProposals(); draw(); };
-    list.append(el('div', { class: 'media-row panel' },
-      thumb,
-      el('div', { class: 'media-body' },
-        el('div', { class: 'media-name' }, m.name, m.alpha ? el('span', { class: 'chip' }, 'PNG détouré') : null),
-        el('textarea', { rows: '2', placeholder: 'Dis-moi quoi en faire… ex. « photo de mon pote sur scène quand je dis Guillaume »', value: m.comment,
-          onchange: e => { m.comment = e.target.value; m.override = {}; interpret(m); regenerateProposals(); draw(); } }),
-        el('p', { class: 'understood' }, '✓ Compris : ', m.auto.reason.join(', '), ` · ${fmt1(c.start)} → ${fmt1(c.start + c.dur)}`, c.label ? ` · étiquette « ${c.label} »` : ''),
-        el('div', { class: 'options compact' },
-          el('label', {}, 'Mise en page', select([['', `Auto (${MEDIA_LAYOUTS.find(l => l.id === c.layout)?.name})`], ...MEDIA_LAYOUTS.map(l => [l.id, l.name])], m.override.layout || '', v => set('layout', v || undefined))),
-          ['sticker', 'pip'].includes(c.layout) ? el('label', {}, 'Position', select(POSITIONS, c.pos, v => set('pos', v))) : null,
+    const set = (k, v) => { m.override[k] = v; draw(); };
+    box.append(el('div', { class: 'media-row', style: 'margin-top:12px' },
+      m.kind === 'video' ? el('video', { src: m.url, muted: '', class: 'thumb' }) : el('img', { src: m.url, class: 'thumb' }),
+      el('div', { style: 'flex:1;min-width:0' },
+        el('b', {}, m.name),
+        el('textarea', { rows: '2', placeholder: 'Dis-moi quoi en faire…', value: m.comment, onchange: e => { m.comment = e.target.value; m.override = {}; interpret(m); draw(); } }),
+        el('div', { class: 'understood' }, '✓ Compris : ', m.auto.reason.join(', '), ` · ${fmt1(c.start)} → ${fmt1(c.start + c.dur)}`),
+        el('div', { class: 'options' },
+          select([['', `Auto (${MEDIA_LAYOUTS.find(l => l.id === c.layout)?.name})`], ...MEDIA_LAYOUTS.map(l => [l.id, l.name])], m.override.layout || '', v => set('layout', v || undefined)),
+          ['sticker', 'pip'].includes(c.layout) ? select(POSITIONS, c.pos, v => set('pos', v)) : null,
           el('label', {}, 'Début', el('input', { type: 'number', step: '0.1', min: '0', value: (+c.start).toFixed(1), onchange: e => set('start', Math.max(0, +e.target.value || 0)) })),
           el('label', {}, 'Durée', el('input', { type: 'number', step: '0.1', min: '0.5', value: (+c.dur).toFixed(1), onchange: e => set('dur', Math.max(.5, +e.target.value || 1)) })),
-          el('label', {}, 'Étiquette', el('input', { type: 'text', value: c.label || '', placeholder: 'texte affiché', onchange: e => set('label', e.target.value) })),
-          el('button', { class: 'btn', onclick: () => { video.currentTime = Math.max(0, c.start - .4); video.play().catch(() => {}); } }, '▶ Voir'),
-          el('button', { class: 'btn', onclick: () => { S.media = S.media.filter(x => x !== m); regenerateProposals(); draw(); } }, '✕')))));
+          el('button', { class: 'btn small', onclick: () => { video.currentTime = Math.max(0, c.start - .4); video.play().catch(() => {}); } }, '▶'),
+          el('button', { class: 'btn small danger', onclick: () => { S.media = S.media.filter(x => x !== m); draw(); } }, '✕')))));
   }
-  C.append(list);
-  if (S.media.length) C.append(el('button', { class: 'btn yellow', style: 'margin-top:12px', onclick: () => goto(ST.proposals) }, 'Voir les propositions avec mes médias →'));
+  return box;
 }
 
-// ---------- Propositions ----------
-function stepProposals(C) {
-  if (!S.proposals.length) {
-    C.append(el('p', { class: 'muted' }, 'Importe une vidéo pour recevoir des propositions.'), el('button', { class: 'btn', onclick: () => goto(ST.import) }, '← Import'));
-    return;
-  }
-  const A = S.A;
-  C.append(el('div', { class: 'banner' },
-    el('span', {}, A.words.length ? `${A.words.length} mots transcrits` : 'Pas de transcription (propositions génériques)',
-      A.topic ? ` · sujet : ${TOPIC_NAMES[A.topic]}` : '', A.moments?.length ? ` · ${A.moments.length} moments à illustrer` : '',
-      ' · ', `${A.peaks.length} temps forts`, ' · ', `${S.media.length} média${S.media.length > 1 ? 's' : ''}`, ' · ',
-      S.cuts.segs.length ? `${S.cuts.segs.length} blancs à couper (−${cutSaving(S.cuts.segs).toFixed(1)} s)` : 'aucun blanc à couper'),
-    el('button', { class: 'btn', style: 'margin-left:auto', onclick: () => { S.seed++; regenerateProposals(); S.preview = 0; draw(); } }, '↻ Autres propositions')));
-  fxPanel(C);
-  const g = el('div', { class: 'grid wide' });
-  S.proposals.forEach((p, i) => {
-    const P = PALETTES[p.pal];
-    const names = [...new Set(p.motions.map(m => M[m.type].name))];
-    g.append(el('div', { class: 'card' + (i === S.preview ? ' sel' : '') },
-      el('span', { class: 'num' }, String(i + 1)),
-      liveCanvas(() => proposalCfg(p)),
-      el('h3', {}, p.name),
-      el('p', {}, p.inspo),
-      el('p', { class: 'hookline' }, `« ${p.hook.l1} ${p.hook.l2} »`),
-      el('div', { class: 'chips' },
-        el('span', {}, p.font), el('span', { style: `border-color:${P.accent};color:${P.accent}` }, P.name),
-        el('span', {}, 'Titre ' + TITLES.find(t => t.id === p.title).name.toLowerCase()),
-        A.chunks.length ? el('span', {}, 'Sous-titres ' + CAPTION_STYLES.find(c => c.id === p.captions).name.toLowerCase()) : null,
-        S.media.length ? el('span', {}, 'Médias : ' + MEDIA_LAYOUTS.find(l => l.id === p.mediaLayout).name.toLowerCase()) : null,
-        p.cuts && S.cuts.segs.length ? el('span', {}, `Coupes −${cutSaving(S.cuts.segs).toFixed(1)} s`) : el('span', {}, 'Sans coupes'),
-        p.depth ? el('span', { class: 'hot' }, 'Texte derrière toi') : null,
-        ...[['pop', 'Kinetic Pop'], ['slide', 'Slide & Blur'], ['glow', 'Glow']].filter(([k]) => p.fx[k]).map(([, n]) => el('span', {}, n)),
-        ...names.map(n => el('span', {}, n))),
-      el('textarea', { rows: '1', class: 'note', placeholder: 'Ta note (ce qui marche, ce qu\'il faut changer)', value: S.notes[p.name] || '', oninput: e => { S.notes[p.name] = e.target.value; } }),
-      el('div', { class: 'row' },
-        el('button', { onclick: () => { S.preview = i; video.currentTime = 0; video.play().catch(() => {}); draw(); } }, 'Aperçu'),
-        el('button', { class: 'go', onclick: () => { applyProposal(p); goto(ST.hook); } }, 'Choisir'))));
-  });
-  C.append(g);
+// ---------- Aller-retour avec Claude ----------
+function copyForClaude(e) {
+  const txt = claudePrompt(S.words, { ...S.look, name: PRESETS.find(p => p.id === S.look.preset)?.name || 'perso' }, S.hook);
+  const btn = e.currentTarget;
+  navigator.clipboard.writeText(txt).then(() => { btn.textContent = 'Copié ✓ — colle-le à Claude'; },
+    () => modal('Copie ce texte et colle-le à Claude', el('textarea', { rows: '16', value: txt })));
+}
+function modal(title, ...body) {
+  const m = el('div', { class: 'modal', onclick: e => { if (e.target === m) m.remove(); } },
+    el('div', {}, el('h2', { style: 'margin-top:0;font-size:16px' }, title), ...body,
+      el('div', { class: 'row-btns', style: 'margin-top:12px' }, el('button', { class: 'btn', onclick: () => m.remove() }, 'Fermer'))));
+  document.body.append(m);
+  return m;
+}
+function importPlanModal() {
+  const ta = el('textarea', { rows: '14', placeholder: 'Colle ici la réponse de Claude (le bloc JSON)…' });
+  const msg = el('p', { class: 'muted' }, 'Les animations importées remplacent le montage automatique ; ce que tu as ajouté à la main est gardé.');
+  const m = modal('Importer le plan de Claude', ta, msg, el('button', { class: 'btn yellow', onclick: () => {
+    try {
+      const r = planToItems(parsePlan(ta.value), S.words, S.uid);
+      S.uid += r.items.length + 1;
+      for (const c of r.corrections) if (S.words[c.i] && c.w) { S.words[c.i].w = c.w; S.words[c.i].fixed = keyW(S.words[c.i].orig) !== keyW(c.w); }
+      for (const [a, b] of r.cuts) for (let i = a; i <= b && i < S.words.length; i++) if (S.words[i]) S.words[i].cut = true;
+      if (r.hook?.l1) S.hook = { l1: r.hook.l1, l2: r.hook.l2 || '' };
+      S.items = [...S.items.filter(it => it.from === 'manual'), ...r.items].sort((x, y) => x.start - y.start);
+      refreshDerived();
+      m.remove(); S.tab = 'edit'; S.sel = null; draw();
+    } catch (err) { msg.className = 'err'; msg.textContent = 'Plan illisible : ' + err.message; }
+  } }, 'Importer'));
+}
+function dictModal() {
+  const rows = Object.entries(S.dict);
+  modal('Dictionnaire de corrections', el('p', { class: 'muted' }, 'Ces corrections sont appliquées automatiquement à chaque nouvelle transcription.'),
+    rows.length ? el('div', {}, ...rows.map(([k, v]) => el('div', { class: 'options' }, el('span', {}, `« ${k} » → « ${v} »`),
+      el('button', { class: 'btn small danger', onclick: e => { delete S.dict[k]; saveDict(); e.currentTarget.parentElement.remove(); } }, 'Oublier')))) : el('p', {}, 'Vide pour l\'instant.'));
 }
 
-function appliedBanner(C) {
-  if (!S.applied) return;
-  C.append(el('div', { class: 'banner' }, el('span', {}, `Montage « ${S.applied} » appliqué. Ajuste ce que tu veux, ou va directement à l'export.`),
-    el('button', { class: 'btn yellow', style: 'margin-left:auto', onclick: () => goto(ST.export) }, 'Aller à l\'export →')));
-}
-
-function stepHook(C) {
-  appliedBanner(C);
-  const f = (label, key) => el('label', { class: 'field' }, el('span', {}, label),
-    el('input', { value: S.hook[key], oninput: e => { S.hook[key] = e.target.value; } }));
-  C.append(f('Ligne 1 (courte, idéalement un mot)', 'l1'), f('Ligne 2', 'l2'),
-    el('label', { class: 'field' }, el('span', {}, 'Durée du titre (secondes)'),
-      el('input', { type: 'number', min: '1', max: '10', step: '0.1', value: S.titleDur, oninput: e => { S.titleDur = clamp(+e.target.value || 3, 1, 10); } })));
-}
-function stepFont(C) {
-  appliedBanner(C);
-  C.append(choiceGrid(FONTS, f => f.name === S.font, f => S.font = f.name, f => styleCfg({ font: f.name })));
-}
-function stepColors(C) {
-  appliedBanner(C);
-  C.append(choiceGrid(PALETTES.map((p, i) => ({ ...p, i })), p => p.i === S.pal, p => S.pal = p.i, p => styleCfg({ pal: p.i }),
-    p => el('div', { class: 'swatches' }, ...[p.accent, p.text, p.ink, p.panel].map(c => el('i', { style: `background:${c}` })))));
-}
-function stepTitle(C) {
-  appliedBanner(C);
-  fxPanel(C);
-  C.append(choiceGrid(TITLES, t => t.id === S.title, t => S.title = t.id, t => styleCfg({ title: t.id }), t => el('p', {}, t.desc)));
-}
-
-// ---------- Motions : les moments de ta vidéo, et la bibliothèque ----------
-const momentById = id => S.A.moments?.find(m => m.id === id);
-const momentTypeOf = m => S.momentType[m.id] || m.candidates[0];
-// Motion prête à placer pour un moment (type et texte éventuellement modifiés par l'utilisateur).
-function momentMotion(m) {
-  const mo = motionFromMoment(m, momentTypeOf(m));
-  if (S.momentText[m.id] != null) mo.text = S.momentText[m.id];
-  return mo;
-}
-const sentenceAt = t => (S.A.sentences || []).find(s => t >= s.s - .2 && t <= s.e + .2);
-
-function toggleMoment(m) {
-  const on = S.taken.find(x => x.momentId === m.id);
-  if (on) S.taken = S.taken.filter(x => x !== on);
-  else S.taken.push({ ...momentMotion(m), uid: S.uid++ });
-  draw();
-}
-function refreshMoment(m) {
-  const i = S.taken.findIndex(x => x.momentId === m.id);
-  if (i >= 0) S.taken[i] = { ...momentMotion(m), uid: S.taken[i].uid };
-}
-
-function stepMotions(C) {
-  appliedBanner(C);
-  const moments = S.A.moments || [];
-  C.append(el('div', { class: 'tabs' },
-    el('button', { class: 'tab' + (S.motionTab === 'moments' ? ' on' : ''), onclick: () => { S.motionTab = 'moments'; draw(); } },
-      'Moments de ta vidéo ', el('span', { class: 'muted' }, String(moments.length))),
-    el('button', { class: 'tab' + (S.motionTab === 'lib' ? ' on' : ''), onclick: () => { S.motionTab = 'lib'; draw(); } }, 'Bibliothèque'),
-    el('span', { class: 'muted', style: 'margin-left:auto;align-self:center' }, `${S.taken.filter(x => x.type !== 'zoom').length} animation(s) dans ton montage`)));
-  if (S.motionTab === 'lib') return stepLibrary(C);
-
-  if (!moments.length) {
-    C.append(el('div', { class: 'panel' }, el('h2', {}, 'Aucun moment repéré'),
-      el('p', { class: 'muted' }, S.A.words.length
-        ? 'La transcription ne contient ni chiffre, ni liste, ni question, ni mot fort exploitable. Utilise la bibliothèque pour ajouter des animations à la main.'
-        : 'Sans transcription, l\'app ne peut pas savoir ce que tu dis. Lance la transcription (étape Sous-titres) ou utilise la bibliothèque.')));
-    return;
-  }
-  C.append(el('p', { class: 'muted' }, S.A.topic ? `Sujet repéré : ${TOPIC_NAMES[S.A.topic]}. ` : '',
-    'Chaque carte est un moment de ta vidéo, avec l\'animation qui illustre ce que tu dis à cet instant. Clique sur une carte pour l\'ajouter ou la retirer.'));
-  const kinds = [...new Set(moments.map(m => m.kind))];
-  C.append(el('div', { class: 'tabs small' },
-    el('button', { class: 'tab' + (!S.kindFilter ? ' on' : ''), onclick: () => { S.kindFilter = ''; draw(); } }, 'Tous'),
-    ...kinds.map(k => el('button', { class: 'tab' + (S.kindFilter === k ? ' on' : ''), onclick: () => { S.kindFilter = k; draw(); } },
-      KIND_NAMES[k], ' ', el('span', { class: 'muted' }, String(moments.filter(m => m.kind === k).length))))));
-  const g = el('div', { class: 'grid' });
-  for (const m of moments) {
-    if (S.kindFilter && m.kind !== S.kindFilter) continue;
-    const added = S.taken.some(x => x.momentId === m.id);
-    const sent = sentenceAt(m.t);
-    const preview = () => { const mo = momentMotion(m); return { ...mo, start: .3, times: mo.times }; };
-    const card = el('div', { class: 'card clickable moment' + (added ? ' taken' : ''), onclick: e => { if (!e.target.closest('select,input,button')) toggleMoment(m); } },
-      el('span', { class: 'num' }, `${fmt1(m.t)} · ${KIND_NAMES[m.kind]}`),
-      el('span', { class: 'badge' }, added ? '✓ Ajouté' : '+ Ajouter'),
-      liveCanvas(() => ({ ...base(), title: null, captions: null, media: [], motions: [preview()], frame: m.frame }), preview().dur + .8),
-      el('p', { class: 'quote' }, `« ${(sent?.text || m.text).slice(0, 110)} »`),
-      el('div', { class: 'options compact' },
-        m.candidates.length > 1 ? select(m.candidates.map(c => [c, M[c].name]), momentTypeOf(m), v => { S.momentType[m.id] = v; delete S.momentText[m.id]; refreshMoment(m); draw(); }) : el('b', {}, M[m.candidates[0]].name),
-        el('button', { class: 'btn', onclick: () => { video.currentTime = Math.max(0, m.t - 1); video.play().catch(() => {}); } }, '▶ Voir')),
-      el('input', { type: 'text', class: 'mtext', value: S.momentText[m.id] ?? motionText(m, momentTypeOf(m)), title: M[momentTypeOf(m)].hint || '',
-        oninput: e => { S.momentText[m.id] = e.target.value; refreshMoment(m); } }));
-    g.append(card);
-  }
-  C.append(g);
-}
-
-// Bibliothèque : toutes les animations, ajoutées à la tête de lecture avec le texte de ce moment-là.
-function libraryText(type) {
-  const t = video.currentTime || 0;
-  const m = (S.A.moments || []).filter(x => x.candidates.includes(type)).sort((a, b) => Math.abs(a.t - t) - Math.abs(b.t - t))[0];
-  if (m && Math.abs(m.t - t) < 8) return motionText(m, type);
-  const s = sentenceAt(t);
-  if (s && M[type].text && !/\|/.test(M[type].text) && type !== 'emoji') return s.words.slice(0, 6).map(w => w.w).join(' ');
-  return M[type].text;
-}
-function stepLibrary(C) {
-  C.append(el('p', { class: 'muted' }, 'Place la tête de lecture où tu veux l\'animation, puis clique sur une carte : elle s\'ajoute à ce moment avec le texte de ce que tu dis (modifiable à l\'étape Export).'));
-  C.append(el('div', { class: 'tabs small' }, ...CATEGORIES.map(c => el('button', { class: 'tab' + (S.libCat === c.id ? ' on' : ''), onclick: () => { S.libCat = c.id; draw(); } }, c.name))));
-  const g = el('div', { class: 'grid' });
-  for (const def of MOTIONS) {
-    if (def.cat !== S.libCat) continue;
-    const n = S.taken.filter(x => x.type === def.id).length;
-    const sample = { type: def.id, variant: 0, start: .3, dur: def.dur, text: libraryText(def.id) };
-    g.append(el('div', { class: 'card clickable' + (n ? ' taken' : ''), onclick: () => {
-      const t = +(video.currentTime || 0).toFixed(2);
-      S.taken.push({ uid: S.uid++, type: def.id, variant: 0, start: t, dur: def.dur, text: libraryText(def.id) });
-      draw();
-    } },
-      el('span', { class: 'badge' }, n ? `✓ ${n} dans le montage` : `+ Ajouter à ${fmt1(video.currentTime || 0)}`),
-      liveCanvas(() => ({ ...base(), title: null, captions: null, media: [], motions: [sample] }), def.dur + .8),
-      el('h3', {}, def.name), el('p', {}, def.desc)));
-  }
-  C.append(g);
-}
-
-function stepCaptions(C) {
-  appliedBanner(C);
-  const A = S.A;
-  if (!A.chunks.length) {
-    const busy = A.status === 'running';
-    C.append(el('div', { class: 'panel' },
-      el('h2', {}, 'Pas encore de transcription'),
-      el('p', { class: 'muted' }, A.pcm ? 'Lance la transcription pour générer les sous-titres.' : 'Importe une vidéo avec du son pour générer des sous-titres.'),
-      A.asrError ? el('p', { class: 'err' }, A.asrError) : null,
-      el('div', { class: 'options' },
-        el('label', {}, 'Langue', select(LANGS, S.opts.lang, v => { S.opts.lang = v; })),
-        el('button', { class: 'btn yellow', disabled: !A.pcm || busy || null, onclick: runTranscription }, busy ? 'Transcription en cours…' : 'Transcrire')),
-      el('div', { id: 'amsg', class: 'muted' }, busy ? A.msg : ''),
-      el('div', { class: 'progress' }, el('div', { id: 'abar', style: `width:${A.frac * 100}%` }))));
-    return;
-  }
-  C.append(el('div', { class: 'options' },
-    el('label', {}, el('input', { type: 'checkbox', checked: S.captions.on, onchange: e => { S.captions.on = e.target.checked; draw(); } }), 'Afficher les sous-titres'),
-    el('label', {}, 'Position', el('input', { type: 'range', min: '0.3', max: '0.9', step: '0.01', value: S.captions.pos, oninput: e => { S.captions.pos = +e.target.value; } }))));
-  C.append(choiceGrid(CAPTION_STYLES, c => c.id === S.captions.style, c => { S.captions.style = c.id; S.captions.on = true; },
-    c => ({ ...base(), title: null, motions: [], media: [], captions: captionsCfg(c.id) }), c => el('p', {}, c.desc), null));
-  const rows = A.chunks.map(ch => el('tr', {},
-    el('td', {}, el('button', { onclick: () => { video.currentTime = ch.s; } }, fmt1(ch.s))),
-    el('td', {}, el('input', { type: 'text', value: ch.words.map(w => w.w).join(' '), onchange: e => retextChunk(ch, e.target.value) }))));
-  C.append(el('div', { class: 'panel', style: 'margin-top:16px' }, el('h2', {}, 'Texte des sous-titres'),
-    el('div', { class: 'scroll' }, el('table', {}, ...rows))));
-}
-
-async function runTranscription() {
-  const A = S.A;
-  A.status = 'running'; A.transcribing = true; A.asrError = ''; draw();
-  try {
-    A.words = await transcribe(A.pcm, A.db, { lang: S.opts.lang, onProgress: asrProgress });
-  } catch (e) {
-    if (e.message !== 'cancelled') A.asrError = e.message;
-  }
-  A.transcribing = false;
-  A.chunks = chunkWords(A.words);
-  Object.assign(A, analyzeContent(A.words, A.peaks, A.duration));
-  captureMomentFrames();
-  A.status = 'done';
-  S.media.forEach(interpret);
-  regenerateProposals();
-  setProgress(A.words.length ? `Terminé : ${A.words.length} mots transcrits.` : 'Terminé.', 1);
-  draw();
-}
-
-function asrProgress(p) {
-  if (p.phase === 'download') setProgress(`Téléchargement du modèle Whisper… ${(p.loaded / 1e6).toFixed(0)} / ${(p.total / 1e6).toFixed(0)} Mo`, .1 + .3 * p.loaded / p.total);
-  else setProgress(`Transcription… ${fmt(p.done)} / ${fmt(p.total)}`, .4 + .6 * p.done / p.total);
-}
-
-// ---------- Export ----------
-function stepExport(C) {
-  appliedBanner(C);
-  const A = S.A;
-  const saving = cutSaving(S.cuts.segs);
+// ---------- Onglet Revue ----------
+function reviewTab(C) {
+  C.append(el('p', { class: 'lead' }, el('b', {}, 'Revue. '), 'Regarde le résultat à gauche, règle les derniers détails et exporte.'));
   C.append(el('div', { class: 'panel' }, el('h2', {}, 'Couper les blancs'),
-    A.db ? el('div', {},
+    S.A.db ? el('div', {},
       el('div', { class: 'options' },
-        el('label', {}, el('input', { type: 'checkbox', checked: S.cuts.on, onchange: e => { S.cuts.on = e.target.checked; draw(); } }),
-          `Supprimer ${S.cuts.segs.length} blancs (−${saving.toFixed(1)} s → ${fmt(A.duration - saving)} au final)`),
-        el('label', {}, 'Sensibilité', el('input', { type: 'range', min: '0.1', max: '0.6', step: '0.02', value: S.cuts.sens, onchange: e => { S.cuts.sens = +e.target.value; recomputeCuts(); draw(); } })),
-        el('label', {}, 'Blanc minimum', el('input', { type: 'range', min: '0.25', max: '1.5', step: '0.05', value: S.cuts.minLen, onchange: e => { S.cuts.minLen = +e.target.value; recomputeCuts(); draw(); } }), `${S.cuts.minLen.toFixed(2)} s`)),
-      el('p', { class: 'muted' }, 'Les zones coupées apparaissent en rouge sur la timeline sous l\'aperçu.'))
+        el('label', {}, el('input', { type: 'checkbox', checked: S.cuts.on, onchange: e => { S.cuts.on = e.target.checked; refreshDerived(); draw(); } }), 'Supprimer les blancs automatiquement'),
+        el('label', {}, 'Sensibilité', el('input', { type: 'range', min: '0.1', max: '0.6', step: '0.02', value: S.cuts.sens, onchange: e => { S.cuts.sens = +e.target.value; recomputeSilences(); refreshDerived(); draw(); } })),
+        el('label', {}, 'Blanc minimum', el('input', { type: 'range', min: '0.25', max: '1.5', step: '0.05', value: S.cuts.minLen, onchange: e => { S.cuts.minLen = +e.target.value; recomputeSilences(); refreshDerived(); draw(); } }))),
+      el('p', { class: 'muted' }, `Au total (blancs + mots barrés dans l'Édition) : −${cutSaving().toFixed(1)} s → ${fmt(S.A.duration - cutSaving())} au final.`))
       : el('p', { class: 'muted' }, 'Aucune piste audio analysée.')));
-
-  C.append(el('div', { class: 'panel' }, el('h2', {}, 'Effets sonores'),
+  C.append(el('div', { class: 'panel' }, el('h2', {}, 'Sous-titres et sons'),
     el('div', { class: 'options' },
-      el('label', {}, el('input', { type: 'checkbox', checked: S.sfx.on, onchange: e => { S.sfx.on = e.target.checked; } }), 'Ajouter des sons (pop, whoosh, impact, frappe…) sur les animations'),
-      el('label', {}, 'Volume', el('input', { type: 'range', min: '0', max: '1', step: '0.05', value: S.sfx.vol, oninput: e => { S.sfx.vol = +e.target.value; } }))),
-    el('p', { class: 'muted' }, 'Les sons sont générés par l\'app (aucun fichier), entendus en lecture et mixés dans l\'export.')));
-
-  const rows = [...S.taken].sort((a, b) => a.start - b.start);
-  const num = (m, key) => el('input', { type: 'number', step: '0.1', min: key === 'dur' ? '0.3' : '0', value: m[key],
-    oninput: e => { const v = parseFloat(e.target.value); if (isFinite(v)) m[key] = Math.max(key === 'dur' ? .3 : 0, v); } });
-  C.append(el('div', { class: 'panel' }, el('h2', {}, 'Timing des motions'),
-    rows.length ? null : el('p', { class: 'muted' }, 'Aucune motion — choisis une proposition ou garde-en à l\'étape Motions.'),
-    el('div', { class: 'scroll' }, el('table', {},
-      el('tr', {}, ...['Motion', 'Début (s)', 'Durée (s)', 'Texte', 'Son', '', ''].map(h => el('th', {}, h))),
-      el('tr', {}, el('td', {}, 'Titre (hook)'), el('td', {}, '0'), el('td', {}, String(S.titleDur)), el('td', {}, `${S.hook.l1} / ${S.hook.l2}`), el('td'), el('td'), el('td')),
-      ...rows.map(m => el('tr', {},
-        el('td', {}, M[m.type].name + (m.variant ? ` v${m.variant + 1}` : '')),
-        el('td', {}, num(m, 'start')),
-        el('td', {}, num(m, 'dur')),
-        el('td', {}, m.text != null ? el('input', { type: 'text', value: m.text, title: M[m.type].hint || '', placeholder: M[m.type].hint || '', oninput: e => { m.text = e.target.value; } }) : el('span', { class: 'muted' }, '—')),
-        el('td', {}, select(SFX, m.sfx ?? DEFAULT_SFX[m.type] ?? '', v => { m.sfx = v; })),
-        el('td', {}, el('button', { onclick: () => { m.start = +video.currentTime.toFixed(1); draw(); } }, '⇤ Tête de lecture')),
-        el('td', {}, el('button', { onclick: () => { S.taken = S.taken.filter(x => x !== m); draw(); } }, '✕'))))))));
-
-  C.append(el('div', { class: 'panel' }, el('h2', {}, 'Export'),
+      el('label', {}, el('input', { type: 'checkbox', checked: S.captions.on, onchange: e => { S.captions.on = e.target.checked; } }), 'Sous-titres'),
+      el('label', {}, el('input', { type: 'checkbox', checked: S.sfx.on, onchange: e => { S.sfx.on = e.target.checked; } }), 'Effets sonores sur les animations'),
+      el('label', {}, 'Volume', el('input', { type: 'range', min: '0', max: '1', step: '0.05', value: S.sfx.vol, oninput: e => { S.sfx.vol = +e.target.value; } })))));
+  C.append(depthPanel());
+  C.append(el('div', { class: 'panel', style: 'margin-top:14px' }, el('h2', {}, 'Export'),
     el('button', { class: 'btn yellow', id: 'exportBtn', onclick: exportVideo }, 'Exporter la vidéo'),
     el('div', { class: 'progress' }, el('div', { id: 'bar' })),
-    el('p', { class: 'muted', id: 'status' },
-      S.server.ffmpeg ? 'ffmpeg détecté : l\'export sera converti en MP4 H.264.' : 'Lance « python3 serve.py » avec ffmpeg installé pour obtenir un MP4 (sinon export WebM).'),
-    el('p', { class: 'muted' }, 'L\'export se fait en temps réel : la vidéo est rejouée et capturée. Garde l\'onglet au premier plan.')));
-
-  C.append(el('div', { class: 'panel' }, el('h2', {}, 'Couverture du reel'),
-    el('p', { class: 'muted' }, 'Place la tête de lecture sur la bonne image, le titre (ton hook) est ajouté dans ton style. Ça donne un PNG 1080 × 1920 à mettre en couverture.'),
-    el('button', { class: 'btn', onclick: downloadCover }, 'Télécharger la couverture (PNG)')));
-
-  C.append(el('div', { class: 'panel' }, el('h2', {}, 'Brief pour Claude'),
-    el('p', { class: 'muted' }, 'Résume tout ton montage : médias et ce que tu as écrit dessus, éléments gardés / jetés et tes notes. Colle-le dans ta conversation avec Claude pour qu\'il ajuste l\'app ou le montage.'),
+    el('p', { class: 'muted', id: 'status' }, S.server.ffmpeg ? 'Export en MP4 H.264.' : 'Sans ffmpeg (serve.py), l\'export sort dans le format du navigateur.'),
+    el('p', { class: 'muted' }, 'L\'export se fait en temps réel : garde l\'onglet au premier plan.'),
     el('div', { class: 'row-btns' },
-      el('button', { class: 'btn', onclick: e => { navigator.clipboard.writeText(brief()).then(() => { e.target.textContent = 'Copié ✓'; }); } }, 'Copier le brief'),
-      el('button', { class: 'btn', onclick: () => el('a', { href: URL.createObjectURL(new Blob([brief()], { type: 'text/markdown' })), download: 'brief-montage.md' }).click() }, 'Télécharger (.md)'))));
+      el('button', { class: 'btn', onclick: downloadCover }, 'Télécharger la couverture (PNG)'),
+      el('button', { class: 'btn', onclick: copyForClaude }, '📋 Copier pour Claude'))));
 }
 
 function downloadCover() {
-  const c = el('canvas', { width: 1080, height: 1920 });
-  const t = video.currentTime || 0;
-  render(c.getContext('2d'), 1080, 1920, t, { ...base(), motions: [], media: [], captions: null, noSync: true, titleStart: t - S.titleDur * .5 });
+  const c = el('canvas', { width: 1080, height: 1920 }), t = video.currentTime || 0;
+  render(c.getContext('2d'), 1080, 1920, t, cfg({ motions: [], media: [], captions: null, noSync: true, titleStart: t - S.titleDur * .5 }));
   c.toBlob(b => el('a', { href: URL.createObjectURL(b), download: (S.fileName.replace(/\.[^.]+$/, '') || 'reel') + '-couverture.png' }).click(), 'image/png');
 }
 
-function brief() {
-  const L = [];
-  const cfg = base();
-  L.push(`# Brief de montage — ${S.fileName || 'vidéo'}`, '');
-  L.push(`- Durée : ${fmt(S.A.duration)}${S.cuts.on ? ` (−${cutSaving(S.cuts.segs).toFixed(1)} s de blancs coupés)` : ''}`);
-  L.push(`- Montage de départ : ${S.applied || 'aucun'}`);
-  L.push(`- Hook : « ${S.hook.l1} / ${S.hook.l2} » — titre ${TITLES.find(t => t.id === S.title).name}, police ${S.font}, couleurs ${PALETTES[S.pal].name}`);
-  L.push(`- Sous-titres : ${S.captions.on && S.A.chunks.length ? CAPTION_STYLES.find(c => c.id === S.captions.style).name : 'non'} · Sons : ${S.sfx.on ? 'oui' : 'non'}`);
-  L.push(`- Effets : ${[S.depthOn && 'texte en arrière-plan', S.fx.pop && 'Kinetic Pop', S.fx.slide && 'Slide & Blur', S.fx.glow && `Glow (${GLOW_COLORS.find(g => g[0] === S.fx.glowColor)?.[1]})`].filter(Boolean).join(', ') || 'aucun'}`, '');
-  if (S.media.length) {
-    L.push('## Médias');
-    S.media.forEach((m, i) => {
-      const c = cfg.media.find(x => x.el === m.el);
-      L.push(`${i + 1}. **${m.name}** — commentaire : « ${m.comment || '(vide)'} »`,
-        `   → ${MEDIA_LAYOUTS.find(l => l.id === c.layout).name}, ${fmt1(c.start)} pendant ${c.dur.toFixed(1)} s${c.label ? `, étiquette « ${c.label} »` : ''}`);
-    });
-    L.push('');
-  }
-  if (S.taken.length) {
-    L.push('## Motions dans le montage');
-    [...S.taken].sort((a, b) => a.start - b.start).forEach(m => L.push(`- ${fmt1(m.start)} ${M[m.type].name}${m.text ? ` — « ${m.text} »` : ''}`));
-    L.push('');
-  }
-  const notes = Object.entries(S.notes).filter(([, n]) => n);
-  if (notes.length) { L.push('## Notes sur les propositions'); notes.forEach(([n, t]) => L.push(`- ${n} : ${t}`)); L.push(''); }
-  return L.join('\n');
-}
-
-// Image de la vidéo à chaque moment repéré (fond des cartes « Moments de ta vidéo »).
-async function captureMomentFrames() {
-  const file = S.file, moments = S.A.moments || [];
-  if (!file || !moments.length) return;
-  const v = Object.assign(document.createElement('video'), { src: URL.createObjectURL(file), muted: true, playsInline: true, preload: 'auto' });
-  try {
-    await new Promise((res, rej) => { v.addEventListener('loadeddata', res, { once: true }); v.addEventListener('error', rej, { once: true }); });
-    const w = 270, h = Math.round(w * v.videoHeight / v.videoWidth);
-    for (const m of moments) {
-      if (S.file !== file) break;
-      await new Promise(res => { v.addEventListener('seeked', res, { once: true }); v.currentTime = Math.min(v.duration - .05, m.t + .2); });
-      m.frame = await createImageBitmap(v, { resizeWidth: w, resizeHeight: h });
-    }
-  } catch { /* les cartes gardent l'image en cours de la vidéo */ }
-  v.removeAttribute('src');
-}
-
-// ---------- Import & analyse ----------
-async function loadFile(file) {
-  if (!file) return;
-  cancelTranscription();
-  resetMatting();
-  S.file = file;
-  S.fileName = file.name;
-  $('filename').textContent = file.name;
-  video.src = URL.createObjectURL(file);
-  await new Promise(r => video.addEventListener('loadedmetadata', r, { once: true }));
-  video.play().catch(() => {});
-  const A = S.A = { status: 'running', msg: 'Lecture de l\'audio…', frac: .02, duration: video.duration, pcm: null, db: null, silences: [], peaks: [], words: [], chunks: [], asrError: '' };
-  S.proposals = []; S.preview = -1; S.applied = ''; wave = null;
-  draw();
-  try {
-    A.pcm = await decodeAudio(file);
-    if (A.pcm) {
-      A.db = loudness(A.pcm);
-      A.peaks = findPeaks(A.db);
-      recomputeCuts();
-      buildWave();
-    }
-    setProgress(A.pcm ? 'Audio analysé.' : 'Pas de piste audio détectée.', .1);
-    if (A.pcm && S.opts.transcribe) {
-      A.transcribing = true; draw();
-      try { A.words = await transcribe(A.pcm, A.db, { lang: S.opts.lang, onProgress: asrProgress }); }
-      catch (e) { if (e.message !== 'cancelled') A.asrError = e.message; }
-      A.transcribing = false;
-    }
-    A.chunks = chunkWords(A.words);
-    Object.assign(A, analyzeContent(A.words, A.peaks, A.duration));
-    captureMomentFrames();
-    A.status = 'done';
-    S.media.forEach(interpret);
-    regenerateProposals();
-    setProgress(`Analyse terminée${A.words.length ? ` : ${A.words.length} mots transcrits` : ''}. ${S.proposals.length} montages proposés.`, 1);
-    S.preview = 0;
-    video.currentTime = 0;
-    if (S.depthOn) startDepth();
-    goto(S.media.length ? ST.proposals : ST.media);
-  } catch (e) {
-    A.status = 'error'; setProgress('Erreur d\'analyse : ' + e.message, 0); draw();
-  }
-}
-
+// ---------- Lecture ----------
 $('play').onclick = () => { video.paused ? video.play() : video.pause(); };
 video.addEventListener('play', () => $('play').textContent = 'Pause');
 video.addEventListener('pause', () => $('play').textContent = 'Lecture');
+video.addEventListener('ended', () => { if (!S.exporting) { video.currentTime = 0; video.play().catch(() => {}); } });
 $('back5').onclick = () => { video.currentTime = Math.max(0, video.currentTime - 5); };
 $('fwd5').onclick = () => { video.currentTime = Math.min(video.duration || 0, video.currentTime + 5); };
-$('prev').onclick = () => goto(S.step - 1);
-$('next').onclick = () => goto(S.step + 1);
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space' && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName)) { e.preventDefault(); $('play').click(); }
+});
 
+// ---------- Export ----------
 const seekTo = t => new Promise(r => { video.addEventListener('seeked', r, { once: true }); video.currentTime = t; });
-
 async function exportVideo() {
-  if (S.exporting) return;
-  if (!video.src) { alert('Importe d\'abord une vidéo (étape 1).'); return; }
+  if (S.exporting || !video.src) return;
   S.exporting = true;
   const btn = $('exportBtn'), bar = $('bar'), status = $('status');
   btn.disabled = true;
   try {
-    if (S.depthOn && depth.kind === 'browser' && depth.status === 'running') {
-      status.textContent = 'Attente de la fin de la préparation de ta silhouette…';
-      await whenPrepared();
-    }
+    if (S.depthOn && depth.kind === 'browser' && depth.status === 'running') { status.textContent = 'Attente de la préparation de ta silhouette…'; await whenPrepared(); }
     await document.fonts.ready;
     let W = video.videoWidth, H = video.videoHeight;
     const k = 1920 / Math.max(W, H);
@@ -813,28 +826,23 @@ async function exportVideo() {
     const { ac, dest } = ensureAudio();
     await ac.resume();
     dest.stream.getAudioTracks().forEach(t => stream.addTrack(t));
-    const mime = ['video/mp4;codecs=avc1,mp4a', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4']
-      .find(m => MediaRecorder.isTypeSupported(m));
+    const mime = ['video/mp4;codecs=avc1,mp4a', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4'].find(m => MediaRecorder.isTypeSupported(m));
     const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 12e6 });
     const chunks = [];
     rec.ondataavailable = e => e.data.size && chunks.push(e.data);
     const stopped = new Promise(r => rec.onstop = r);
-
-    const cfg = base();
-    const segs = S.cuts.on ? [...S.cuts.segs].sort((a, b) => a[0] - b[0]) : [];
-    const D = video.duration, kept = D - cutSaving(segs);
+    const conf = cfg();
+    const segs = S.cutSegs, D = video.duration, kept = D - cutSaving();
     const keptBefore = t => t - segs.reduce((a, [x, y]) => a + clamp(t - x, 0, y - x), 0);
-
-    video.pause(); video.loop = false; video.muted = false;
+    video.pause(); video.muted = false;
     const first = segs.find(([a]) => a <= .01);
     await seekTo(first ? first[1] : 0);
     lastT = video.currentTime - .01;
     updateDepth(video, S.depthOn);
-    render(ctx, W, H, video.currentTime, cfg);
-
-    let finish;
-    const finished = new Promise(r => finish = r);
-    video.addEventListener('ended', () => finish(), { once: true });
+    render(ctx, W, H, video.currentTime, conf);
+    let finish; const finished = new Promise(r => finish = r);
+    const onEnd = () => finish();
+    video.addEventListener('ended', onEnd, { once: true });
     let busy = false, done = false;
     const tick = async () => {
       if (done) return;
@@ -842,37 +850,24 @@ async function exportVideo() {
       const seg = !busy && segs.find(([a, b]) => t >= a && t < b);
       if (seg) {
         if (seg[1] >= D - .05) { finish(); return; }
-        busy = true;
-        rec.pause(); video.pause();
-        await seekTo(seg[1]);
-        lastT = video.currentTime - .01;
-        updateDepth(video, S.depthOn);
-        render(ctx, W, H, video.currentTime, cfg);
-        rec.resume(); await video.play();
-        busy = false;
-      } else if (!busy) {
-        updateDepth(video, S.depthOn);
-        render(ctx, W, H, t, cfg);
-        tickSfx(cfg, t);
-      }
+        busy = true; rec.pause(); video.pause();
+        await seekTo(seg[1]); lastT = video.currentTime - .01;
+        updateDepth(video, S.depthOn); render(ctx, W, H, video.currentTime, conf);
+        rec.resume(); await video.play(); busy = false;
+      } else if (!busy) { updateDepth(video, S.depthOn); render(ctx, W, H, t, conf); tickSfx(conf, t); }
       bar.style.width = (100 * keptBefore(t) / kept) + '%';
       status.textContent = `Enregistrement… ${fmt(keptBefore(t))} / ${fmt(kept)}`;
       requestAnimationFrame(tick);
     };
-    rec.start(250);
-    await video.play();
-    tick();
-    await finished;
-    done = true;
-    video.pause();
+    rec.start(250); await video.play(); tick();
+    await finished; done = true; video.pause();
+    video.removeEventListener('ended', onEnd);
     rec.stop(); await stopped;
-
-    let blob = new Blob(chunks, { type: mime.split(';')[0] });
-    let ext = mime.startsWith('video/mp4') ? 'mp4' : 'webm';
+    let blob = new Blob(chunks, { type: mime.split(';')[0] }), ext = mime.startsWith('video/mp4') ? 'mp4' : 'webm';
     if (!mime.includes('avc1') && S.server.ffmpeg) {
-      status.textContent = 'Conversion en MP4 avec ffmpeg…';
+      status.textContent = 'Conversion en MP4…';
       const r = await fetch('/convert', { method: 'POST', body: blob });
-      if (r.ok) { blob = await r.blob(); ext = 'mp4'; } else status.textContent = 'Conversion échouée, export brut : ' + (await r.text()).slice(0, 200);
+      if (r.ok) { blob = await r.blob(); ext = 'mp4'; } else status.textContent = 'Conversion échouée, export brut.';
     }
     const name = (S.fileName.replace(/\.[^.]+$/, '') || 'video') + '-edit.' + ext;
     el('a', { href: URL.createObjectURL(blob), download: name }).click();
@@ -881,12 +876,11 @@ async function exportVideo() {
   } catch (err) {
     status.textContent = 'Erreur pendant l\'export : ' + err.message;
   } finally {
-    video.muted = true; video.loop = true; video.play().catch(() => {});
-    btn.disabled = false; S.exporting = false;
+    video.muted = true; btn.disabled = false; S.exporting = false;
   }
 }
 
-fetch('/health').then(r => r.ok ? r.json() : null).then(j => { if (j) S.server = j; }).catch(() => {});
-document.fonts.ready.then(() => Promise.all([...FONTS, { family: 'Caveat', weight: 700 }, { family: 'Inter', weight: 800, style: 'italic' }].map(f => document.fonts.load(fstr(f, 40))))).catch(() => {});
+fetch('/health').then(r => r.ok ? r.json() : null).then(j => { if (j) S.server = { ...S.server, ...j }; }).catch(() => {});
+document.fonts.ready.then(() => Promise.all(FONT_PAIRS.flatMap(p => [p.display, p.body, p.hand, p.accent].filter(Boolean)).map(f => document.fonts.load(fstr(f, 40))))).catch(() => {});
 draw();
 requestAnimationFrame(frame);

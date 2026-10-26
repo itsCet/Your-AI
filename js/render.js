@@ -1,184 +1,124 @@
-// Rendu d'une image complète : vidéo, médias, motions, sous-titres et titre.
-// La même fonction sert aux vignettes, à l'aperçu et à l'export.
-import { PALETTES, FONTS, fontOf, fstr, clamp, ease, backOut, env, fitSize, drawVideoRect, drawFit, hi, getVideo, SERIF, UI_BOLD, kineticPop, slideBlur, withGlow, setFrame } from './kit.js';
-import { MOTIONS, M, CATEGORIES, DIMS, HIDES_CAPTIONS, FULLSCREEN, drawMotion } from './motions.js';
+// Rendu d'une image complète : vidéo, médias, éléments et motions, sous-titres et titre d'accroche,
+// le tout dans le look choisi. La même fonction sert aux vignettes, à l'aperçu et à l'export.
+import { PALETTES, fstr, clamp, fitSize, drawVideoRect, drawFit, isLight, setFrame, kineticPop, slideBlur, withGlow } from './kit.js';
+import { palOf, pairOf } from './look.js';
+import { ez, handLine, marker } from './anim.js';
+import { drawOverlay, drawShrink, zoomOf, stateOf, DEPTH_BEHIND, FULLSCREEN, HIDES_CAPTIONS, DIMS } from './elements.js';
 import { drawMedia, syncMediaVideo, MEDIA_DIMS } from './media.js';
 
-export { FONTS, PALETTES, MOTIONS, M, CATEGORIES, fontOf, fstr, clamp };
 export { setVideo } from './kit.js';
 
-// Effets de motion design par thème : Kinetic Pop (mot prononcé qui grossit), Slide & Blur
-// (entrées par le bas avec flou de mouvement), Glow (lueur néon derrière les lettres).
-export const GLOW_COLORS = [['accent', 'Couleur du thème'], ['#00E5FF', 'Cyan'], ['#FF3DCB', 'Rose néon'], ['#FFD60A', 'Or'], ['#FFFFFF', 'Blanc']];
-export const DEFAULT_FX = { pop: false, slide: false, glow: false, glowColor: 'accent' };
-const glowOf = (o, P) => o.fx?.glow ? (o.fx.glowColor === 'accent' || !o.fx.glowColor ? hi(P) : o.fx.glowColor) : null;
-
-// Éléments qui passent derrière la personne quand l'effet « texte en arrière-plan » est actif.
-export const DEPTH_BEHIND = new Set(['beat', 'countdown', 'kinetic', 'bigword', 'counter', 'words']);
-// Éléments qui entrent en Slide & Blur, et ceux qui reçoivent le Glow.
-const SLIDE_IN = new Set(['statcard', 'checklist', 'versus', 'progress', 'grid', 'lower', 'comment', 'name', 'prompt', 'colorcard', 'numbers']);
-const GLOWING = new Set(['beat', 'countdown', 'kinetic', 'bigword', 'counter', 'words', 'statcard', 'name']);
-
-export const TITLES = [
-  { id: 'depth', name: 'Géant derrière toi', desc: 'Énorme texte qui passe derrière ta tête (avec l\'effet arrière-plan)' },
-  { id: 'editorial', name: 'Éditorial', desc: 'Capitales grasses + gros mot en serif italique' },
-  { id: 'tiles', name: 'Tuiles', desc: 'Lettres en tuiles qui tombent' },
-  { id: 'stack', name: 'Empilé', desc: 'Gros texte, 2e ligne en accent' },
-  { id: 'banner', name: 'Bandeau', desc: 'Bandes de couleur qui balaient' },
-  { id: 'sticker', name: 'Stickers', desc: 'Étiquettes blanches légèrement inclinées' },
-  { id: 'highlight', name: 'Surligné', desc: 'Étiquettes couleur, texte gras italique' },
-  { id: 'type', name: 'Machine à écrire', desc: 'Le texte se tape lettre par lettre' },
-];
-
-export const CAPTION_STYLES = [
-  { id: 'editorial', name: 'Éditorial', desc: 'Petits mots en gras, le mot clé en gros serif doré' },
-  { id: 'mixte', name: 'Mixte', desc: 'Texte blanc, mots clés en serif italique' },
-  { id: 'brackets', name: 'Crochets', desc: 'Capitales, crochets autour du mot clé qui devient doré' },
-  { id: 'band', name: 'Bandeau', desc: 'Bande sombre en bas, texte mixte' },
-  { id: 'pop', name: 'Pop', desc: 'Majuscules, mot prononcé en couleur' },
-  { id: 'box', name: 'Boîte', desc: 'Texte sur fond blanc, mot surligné' },
-  { id: 'karaoke', name: 'Karaoké', desc: 'Les mots se colorent au fil de la voix' },
-];
-
-// ---------- Titres ----------
-function drawTitle(ctx, W, H, p, o) {
-  const P = PALETTES[o.pal];
-  ctx.save();
-  if (o.fx?.slide) slideBlur(ctx, W, H, p, .12);
-  // Le glow n'a de sens que sur du texte posé sur la vidéo, pas dans une étiquette ou une tuile.
-  const glow = ['depth', 'editorial', 'stack', 'type'].includes(o.title) ? glowOf(o, P) : null;
-  withGlow(ctx, glow, W, () => drawTitleInner(ctx, W, H, p, o));
-  ctx.restore();
+// Polices et couleurs résolues d'un look.
+export function lookContext(look) {
+  const pair = pairOf(look), P = PALETTES[palOf(look)];
+  return {
+    P, pair, caps: !!pair.caps,
+    D: pair.display, B: pair.body,
+    Hd: pair.hand || pair.accent || pair.display,
+    hasHand: !!pair.hand,
+  };
 }
 
-function drawTitleInner(ctx, W, H, p, o) {
-  const F = fontOf(o.font), P = PALETTES[o.pal];
+const tx = (L, s) => L.caps ? s.toUpperCase() : s;
+function shadowText(ctx, text, x, y, W, a = .5) {
+  ctx.save(); ctx.shadowColor = `rgba(0,0,0,${a})`; ctx.shadowBlur = W * .025; ctx.shadowOffsetY = W * .004;
+  ctx.fillText(text, x, y); ctx.restore();
+}
+
+// ---------- Titre d'accroche ----------
+function drawHook(ctx, W, H, p, o, L, part) {
+  const P = L.P, style = o.look.hook;
   const l1 = o.hook.l1 || '', l2 = o.hook.l2 || '';
-  const out = ease((1 - p) / .1);
+  const out = ez('power2.in')(clamp((1 - p) / .12)) ;
+  const inn = q => ez('expo.out')(clamp(q));
+  const back = q => ez('back.out(1.8)')(clamp(q));
   ctx.save();
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.shadowColor = 'rgba(0,0,0,.45)'; ctx.shadowBlur = W * .02;
+  if (o.look.fx?.slide) slideBlur(ctx, W, H, p, .1);
 
-  if (o.title === 'tiles') {
-    const letters = [...l1.toUpperCase().trim().replace(/\s+/g, ' ')];
-    const n = Math.max(1, letters.length);
-    const size = Math.min(W * .8 / n, W * .17), gap = size * .08;
+  if (style === 'tiles') {
+    // Les tuiles prennent un mot court ; le reste de la ligne passe dans l'étiquette.
+    let t1 = l1.trim(), t2 = l2;
+    if (t1.replace(/\s/g, '').length > 7) { const [w0, ...rest] = t1.split(/\s+/); t1 = w0; t2 = [rest.join(' '), l2].filter(Boolean).join(' '); }
+    const letters = [...tx(L, t1).toUpperCase().trim().replace(/\s+/g, ' ')];
+    const n = Math.max(1, letters.length), size = Math.min(W * .8 / n, W * .16), gap = size * .08;
     const x0 = (W - (n * size + (n - 1) * gap)) / 2, y0 = H * .1;
     letters.forEach((ch, i) => {
-      const lp = backOut((p - i * .035) / .12);
-      if (lp <= 0 || ch === ' ') return;
-      ctx.save();
-      ctx.globalAlpha = clamp(lp) * out;
-      ctx.translate(x0 + i * (size + gap) + size / 2, y0 + size / 2 - (1 - lp) * size * 1.2);
-      ctx.rotate((i % 2 ? 1 : -1) * .06);
-      ctx.fillStyle = i % 2 ? P.accent : P.text;
-      ctx.beginPath(); ctx.roundRect(-size / 2, -size / 2, size, size, size * .08); ctx.fill();
-      ctx.shadowBlur = 0; ctx.fillStyle = P.ink;
-      ctx.font = fstr(F, size * .72); ctx.fillText(ch, 0, size * .04);
+      const k = back((p - i * .035) / .12);
+      if (k <= 0 || ch === ' ') return;
+      ctx.save(); ctx.globalAlpha = clamp(k) * out;
+      ctx.translate(x0 + i * (size + gap) + size / 2, y0 + size / 2 - (1 - k) * size * 1.3); ctx.rotate((i % 2 ? 1 : -1) * .06);
+      ctx.shadowColor = 'rgba(0,0,0,.35)'; ctx.shadowBlur = size * .25;
+      ctx.fillStyle = i % 2 ? P.accent : '#fff'; ctx.beginPath(); ctx.roundRect(-size / 2, -size / 2, size, size, size * .1); ctx.fill();
+      ctx.shadowBlur = 0; ctx.fillStyle = i % 2 && !isLight(P.accent) ? '#fff' : '#111';
+      ctx.font = fstr(L.D, size * .68); ctx.fillText(ch, 0, size * .04);
       ctx.restore();
     });
-    if (l2) {
-      const lp = ease((p - .25) / .15);
-      const fs = fitSize(ctx, l2, F, W * .7, Math.max(size * .42, W * .05));
-      ctx.font = fstr(F, fs);
-      const tw = ctx.measureText(l2).width + fs * 1.2, th = fs * 1.6;
-      ctx.globalAlpha = lp * out;
-      const y = y0 + size * 1.35 + (1 - lp) * fs;
-      ctx.fillStyle = P.text; ctx.beginPath(); ctx.roundRect(W / 2 - tw / 2, y - th / 2, tw, th, fs * .2); ctx.fill();
-      ctx.shadowBlur = 0; ctx.fillStyle = P.ink; ctx.fillText(l2, W / 2, y + fs * .05);
+    if (t2) {
+      const k = inn((p - .25) / .15), F = L.hasHand ? L.Hd : L.B;
+      const fs = fitSize(ctx, t2, F, W * .8, Math.max(size * .42, W * .055));
+      ctx.font = fstr(F, fs); const tw = ctx.measureText(t2).width + fs * 1.1, th = fs * 1.55;
+      ctx.globalAlpha = k * out;
+      const y = y0 + size * 1.4 + (1 - k) * fs;
+      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.roundRect(W / 2 - tw / 2, y - th / 2, tw, th, fs * .2); ctx.fill();
+      ctx.fillStyle = '#111'; ctx.fillText(t2, W / 2, y + fs * .05);
     }
-  } else if (o.title === 'stack') {
-    const s1 = fitSize(ctx, l1.toUpperCase(), F, W * .86, W * .2);
-    const sc = backOut(p / .14);
-    ctx.globalAlpha = clamp(p / .06) * out;
-    ctx.save(); ctx.translate(W / 2, H * .14); ctx.scale(sc, sc);
-    ctx.font = fstr(F, s1); ctx.fillStyle = P.text; ctx.fillText(l1.toUpperCase(), 0, 0);
+  } else if (style === 'stacked') {
+    const s1 = fitSize(ctx, tx(L, l1).toUpperCase(), L.D, W * .86, W * .19);
+    const k1 = back(p / .14), k2 = back((p - .12) / .14);
+    ctx.globalAlpha = clamp(p / .05) * out;
+    ctx.save(); ctx.translate(W / 2, H * .14); ctx.scale(k1, k1); ctx.font = fstr(L.D, s1); ctx.fillStyle = '#fff'; shadowText(ctx, tx(L, l1).toUpperCase(), 0, 0, W); ctx.restore();
+    const s2 = fitSize(ctx, tx(L, l2).toUpperCase(), L.D, W * .82, s1 * .72);
+    ctx.globalAlpha = clamp((p - .12) / .05) * out;
+    ctx.save(); ctx.translate(W / 2, H * .14 + s1 * .55 + s2 * .6); ctx.scale(k2, k2); ctx.font = fstr(L.D, s2); ctx.fillStyle = P.accent; shadowText(ctx, tx(L, l2).toUpperCase(), 0, 0, W); ctx.restore();
+  } else if (style === 'editorial') {
+    const a = l1.toUpperCase(), s1 = fitSize(ctx, a, L.B, W * .8, W * .065);
+    const F2 = L.Hd, s2 = fitSize(ctx, l2, F2, W * .92, W * .17), y = H * .12;
+    ctx.globalAlpha = out * inn(p / .1);
+    ctx.font = fstr(L.B, s1); ctx.letterSpacing = `${W * .006}px`; ctx.fillStyle = '#fff'; shadowText(ctx, a, W / 2, y - (1 - inn(p / .12)) * s1, W); ctx.letterSpacing = '0px';
+    ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W * inn((p - .08) / .2), H); ctx.clip();
+    ctx.font = fstr(F2, s2); ctx.fillStyle = P.accent; shadowText(ctx, l2, W / 2, y + s1 * .75 + s2 * .45, W);
     ctx.restore();
-    const lp = backOut((p - .12) / .14);
-    const s2 = fitSize(ctx, l2.toUpperCase(), F, W * .8, s1 * .7);
-    ctx.globalAlpha = clamp((p - .12) / .06) * out;
-    ctx.save(); ctx.translate(W / 2, H * .14 + s1 * .55 + s2 * .6); ctx.scale(lp, lp);
-    ctx.font = fstr(F, s2); ctx.fillStyle = P.accent; ctx.fillText(l2.toUpperCase(), 0, 0);
-    ctx.restore();
-  } else if (o.title === 'banner') {
-    [l1, l2].forEach((txt, i) => {
-      if (!txt) return;
-      const fs = fitSize(ctx, txt.toUpperCase(), F, W * .74, W * .12);
-      ctx.font = fstr(F, fs);
-      const tw = ctx.measureText(txt.toUpperCase()).width + fs * .8, th = fs * 1.35;
-      const y = H * .12 + i * th * 1.15;
-      const wp = ease((p - i * .1) / .16);
-      const x = W / 2 - tw / 2;
-      ctx.globalAlpha = out;
-      ctx.fillStyle = i ? P.text : P.accent;
-      ctx.fillRect(x, y - th / 2, tw * wp, th);
-      ctx.save(); ctx.beginPath(); ctx.rect(x, y - th / 2, tw * wp, th); ctx.clip();
-      ctx.shadowBlur = 0; ctx.fillStyle = P.ink; ctx.fillText(txt.toUpperCase(), W / 2, y + fs * .05);
+  } else if (style === 'tag') {
+    [l1, l2].filter(Boolean).forEach((txt, i) => {
+      const F = L.hasHand && i ? L.Hd : { ...L.B, style: 'italic' };
+      const fs = fitSize(ctx, txt, F, W * .78, W * .072);
+      ctx.font = fstr(F, fs); const tw = ctx.measureText(txt).width + fs * .9, th = fs * 1.45;
+      const k = back((p - i * .08) / .14); if (k <= 0) return;
+      ctx.save(); ctx.globalAlpha = out;
+      ctx.translate(W / 2, H * .1 + i * th * 1.06); ctx.rotate(i % 2 ? .02 : -.025); ctx.scale(k, k);
+      ctx.fillStyle = P.accent; ctx.beginPath(); ctx.roundRect(-tw / 2, -th / 2, tw, th, fs * .2); ctx.fill();
+      ctx.fillStyle = isLight(P.accent) ? '#111' : '#fff'; ctx.fillText(txt, 0, fs * .04);
       ctx.restore();
     });
-  } else if (o.title === 'type') {
-    const full = l1 + '\n' + l2;
-    const n = Math.floor(full.length * clamp(p / .45));
-    const shown = full.slice(0, n).split('\n');
-    const fs = Math.min(fitSize(ctx, l1, F, W * .84, W * .13), fitSize(ctx, l2 || ' ', F, W * .84, W * .13));
-    ctx.font = fstr(F, fs); ctx.globalAlpha = out;
-    ctx.lineWidth = fs * .12; ctx.strokeStyle = P.ink; ctx.lineJoin = 'round';
+  } else if (style === 'underline') {
+    const s1 = fitSize(ctx, tx(L, l1), L.D, W * .86, W * .13), F2 = L.Hd, s2 = fitSize(ctx, l2, F2, W * .86, W * .12), y = H * .12;
+    ctx.globalAlpha = out * inn(p / .1);
+    ctx.font = fstr(L.D, s1); ctx.fillStyle = '#fff'; shadowText(ctx, tx(L, l1), W / 2, y, W);
+    if (l2) {
+      ctx.globalAlpha = out * inn((p - .1) / .12);
+      ctx.font = fstr(F2, s2); ctx.fillStyle = P.accent; const y2 = y + s1 * .6 + s2 * .6;
+      shadowText(ctx, l2, W / 2, y2, W);
+      const tw = ctx.measureText(l2).width;
+      ctx.globalAlpha = out;
+      handLine(ctx, W / 2 - tw / 2, y2 + s2 * .55, W / 2 + tw / 2, ez('power2.inOut')(clamp((p - .2) / .2)), P.accent, W * .011, 3, -.03);
+    }
+  } else if (style === 'depth') {
+    const a = tx(L, l1).toUpperCase(), s1 = fitSize(ctx, a, L.D, W * .96, W * .5), k = inn(p / .18);
+    if (part !== 'front') { ctx.globalAlpha = out * k; ctx.font = fstr(L.D, s1); ctx.fillStyle = P.accent; ctx.fillText(a, W / 2, H * .27 + (1 - k) * s1 * .25); }
+    if (l2 && part !== 'back') {
+      const F2 = L.hasHand ? L.Hd : L.B, s2 = fitSize(ctx, l2, F2, W * .8, W * .08);
+      ctx.globalAlpha = out * inn((p - .15) / .15); ctx.font = fstr(F2, s2); ctx.fillStyle = '#fff';
+      shadowText(ctx, l2, W / 2, H * .27 + s1 * .52 + s2 * .6, W);
+    }
+  } else { // type
+    const full = l1 + '\n' + l2, n = Math.floor(full.length * clamp(p / .45)), shown = full.slice(0, n).split('\n');
+    const fs = Math.min(fitSize(ctx, l1, L.D, W * .84, W * .12), fitSize(ctx, l2 || ' ', L.D, W * .84, W * .12));
+    ctx.font = fstr(L.D, fs); ctx.globalAlpha = out;
     shown.forEach((line, i) => {
       const y = H * .13 + i * fs * 1.15;
-      ctx.fillStyle = i ? P.accent : P.text;
-      ctx.strokeText(line, W / 2, y); ctx.fillText(line, W / 2, y);
-      if (i === shown.length - 1 && Math.floor(p * 12) % 2 === 0) {
-        const w = ctx.measureText(line).width;
-        ctx.fillStyle = P.accent; ctx.fillRect(W / 2 + w / 2 + fs * .08, y - fs * .45, fs * .08, fs * .9);
-      }
-    });
-  } else if (o.title === 'depth') {
-    // Texte géant à hauteur de tête : avec le détourage, la personne passe devant.
-    const a = l1.toUpperCase();
-    const s1 = fitSize(ctx, a, F, W * .96, W * .5);
-    const k = ease(p / .18);
-    // Avec la profondeur, le gros mot passe derrière (part 'back') et la 2e ligne reste devant (part 'front').
-    if (o.part !== 'front') {
-      ctx.globalAlpha = out * k; ctx.shadowBlur = 0;
-      ctx.font = fstr(F, s1); ctx.fillStyle = hi(P);
-      ctx.fillText(a, W / 2, H * .27 + (1 - k) * s1 * .25);
-    }
-    if (l2 && o.part !== 'back') {
-      const s2 = fitSize(ctx, l2, F, W * .8, W * .08);
-      ctx.globalAlpha = out * ease((p - .15) / .15); ctx.font = fstr(F, s2); ctx.fillStyle = P.text;
-      ctx.shadowBlur = W * .02;
-      ctx.fillText(l2, W / 2, H * .27 + s1 * .52 + s2 * .6);
-    }
-  } else if (o.title === 'editorial') {
-    // Gros mot en serif italique + petite ligne en capitales grasses (montage « storytelling »).
-    const a = l1.toUpperCase(), b = l2;
-    const s1 = fitSize(ctx, a, UI_BOLD, W * .8, W * .1);
-    const s2 = fitSize(ctx, b, SERIF, W * .94, W * .2);
-    const y = H * .13;
-    ctx.globalAlpha = out * ease(p / .1);
-    ctx.font = fstr(UI_BOLD, s1); ctx.fillStyle = P.text;
-    ctx.fillText(a, W / 2, y - (1 - ease(p / .12)) * s1);
-    ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W * ease((p - .08) / .2), H); ctx.clip();
-    ctx.font = fstr(SERIF, s2); ctx.fillStyle = hi(P); ctx.fillText(b, W / 2, y + s1 * .55 + s2 * .45);
-    ctx.restore();
-  } else if (o.title === 'sticker' || o.title === 'highlight') {
-    // Lignes dans des étiquettes : blanches inclinées (sticker) ou couleur, texte en gras italique (highlight).
-    const tag = o.title === 'highlight';
-    [l1, l2].filter(Boolean).forEach((txt, i) => {
-      const Fh = tag ? { family: 'Inter', weight: 800, style: 'italic' } : UI_BOLD;
-      const fs = fitSize(ctx, txt, Fh, W * .78, W * .07);
-      ctx.font = fstr(Fh, fs);
-      const tw = ctx.measureText(txt).width + fs * .9, th = fs * 1.45;
-      const k = backOut((p - i * .08) / .14);
-      if (k <= 0) return;
-      ctx.save();
-      ctx.globalAlpha = out;
-      ctx.translate(W / 2, H * .1 + i * th * 1.02); ctx.rotate(tag ? 0 : (i % 2 ? .025 : -.03)); ctx.scale(k, k);
-      ctx.shadowBlur = tag ? 0 : W * .02;
-      ctx.fillStyle = tag ? hi(P) : '#fff';
-      ctx.beginPath(); ctx.roundRect(-tw / 2, -th / 2, tw, th, fs * (tag ? .2 : .35)); ctx.fill();
-      ctx.shadowBlur = 0; ctx.fillStyle = tag ? '#fff' : '#111'; ctx.fillText(txt, 0, fs * .04);
-      ctx.restore();
+      ctx.fillStyle = i ? P.accent : '#fff'; shadowText(ctx, line, W / 2, y, W);
+      if (i === shown.length - 1 && Math.floor(p * 12) % 2 === 0) { const w = ctx.measureText(line).width; ctx.fillStyle = P.accent; ctx.fillRect(W / 2 + w / 2 + fs * .08, y - fs * .45, fs * .07, fs * .9); }
     });
   }
   ctx.restore();
@@ -196,120 +136,93 @@ function emphasisIdx(words) {
   return best;
 }
 
-function drawCaptions(ctx, W, H, t, o) {
-  const chunk = o.captions.chunks.find(c => t >= c.s && t <= c.e + .15);
-  if (!chunk) return;
-  ctx.save();
-  if (o.fx?.slide) slideBlur(ctx, W, H, (t - chunk.s) / 1, .2);
-  withGlow(ctx, o.captions.style === 'box' ? null : glowOf(o, PALETTES[o.pal]), W, () => drawCaptionsInner(ctx, W, H, t, o));
-  ctx.restore();
-}
-
-function drawCaptionsInner(ctx, W, H, t, o) {
-  const cap = o.captions;
-  const chunk = cap.chunks.find(c => t >= c.s && t <= c.e + .15);
-  if (!chunk) return;
-  const P = PALETTES[o.pal], A = hi(P);
-  const style = cap.style;
-  const emph = emphasisIdx(chunk.words);
-  const cur = chunk.words.findIndex(w => t >= w.s && t < w.e + .05);
+function drawCaptions(ctx, W, H, t, o, L) {
+  const cap = o.captions, chunk = cap.chunks.find(c => t >= c.s && t <= c.e + .15);
+  if (!chunk || !chunk.words.length) return;
+  const P = L.P, style = cap.style;
+  const emph = emphasisIdx(chunk.words), cur = chunk.words.findIndex(w => t >= w.s && t < w.e + .05);
   const pos = style === 'band' ? .87 : cap.pos;
   ctx.save();
+  if (o.look.fx?.slide) slideBlur(ctx, W, H, (t - chunk.s) / 1, .2);
   ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
 
   if (style === 'editorial') {
-    const small = chunk.words.filter((_, i) => i !== emph).map(w => w.w).join(' ');
-    const big = emph >= 0 ? chunk.words[emph] : null;
-    const s1 = fitSize(ctx, small, UI_BOLD, W * .8, W * .055);
-    const s2 = big ? fitSize(ctx, big.w, SERIF, W * .9, W * .15) : 0;
-    const y = H * pos;
-    ctx.shadowColor = 'rgba(0,0,0,.55)'; ctx.shadowBlur = W * .025;
-    if (small) { ctx.font = fstr(UI_BOLD, s1); ctx.fillStyle = '#fff'; ctx.fillText(small, W / 2, big ? y - s2 * .42 : y); }
+    const small = chunk.words.filter((_, i) => i !== emph).map(w => w.w).join(' '), big = emph >= 0 ? chunk.words[emph] : null;
+    const s1 = fitSize(ctx, small, L.B, W * .8, W * .055), s2 = big ? fitSize(ctx, big.w, L.Hd, W * .9, W * .15) : 0, y = H * pos;
+    ctx.fillStyle = '#fff';
+    if (small) { ctx.font = fstr(L.B, s1); shadowText(ctx, small, W / 2, big ? y - s2 * .42 : y, W); }
     if (big && t >= big.s - .05) {
-      const k = backOut((t - big.s + .05) / .2) * (o.fx?.pop ? kineticPop(t - big.s, .18) : 1);
-      ctx.translate(W / 2, y + s1 * .2); ctx.scale(k, k);
-      ctx.font = fstr(SERIF, s2); ctx.fillStyle = A; ctx.fillText(big.w, 0, 0);
+      const k = ez('back.out(1.8)')(clamp((t - big.s + .05) / .2)) * (o.look.fx?.pop ? kineticPop(t - big.s, .16) : 1);
+      ctx.translate(W / 2, y + s1 * .2); ctx.scale(k, k); ctx.font = fstr(L.Hd, s2); ctx.fillStyle = P.accent; shadowText(ctx, big.w, 0, 0, W);
     }
-    ctx.restore();
-    return;
+    ctx.restore(); return;
   }
-
   if (style === 'band') {
     const g = ctx.createLinearGradient(0, H * .7, 0, H);
     g.addColorStop(0, 'rgba(12,12,12,0)'); g.addColorStop(.35, 'rgba(12,12,12,.92)'); g.addColorStop(1, 'rgba(12,12,12,1)');
     ctx.fillStyle = g; ctx.fillRect(0, H * .7, W, H * .3);
   }
-  const upper = style === 'pop' || style === 'karaoke' || style === 'brackets';
-  const fontFor = i => style === 'box' ? UI_BOLD
-    : (style === 'mixte' || style === 'band') ? (i === emph ? SERIF : UI_BOLD)
-    : style === 'brackets' ? UI_BOLD : fontOf(o.font);
+  const upper = style === 'pop' || style === 'brackets' || style === 'karaoke' || L.caps && style !== 'box';
+  const fontFor = i => style === 'pop' ? (L.caps ? L.D : { ...L.B, weight: 800 })
+    : (style === 'hand' || style === 'band') && i === emph ? L.Hd : L.B;
+  const sizeFor = i => (style === 'hand' || style === 'band') && i === emph ? 1.25 : 1;
   const words = chunk.words.map((w, i) => ({ ...w, i, w: upper ? w.w.toUpperCase() : w.w }));
-  let fs = W * (style === 'box' || style === 'mixte' || style === 'band' ? .06 : style === 'brackets' ? .065 : .085);
+  let fs = W * (style === 'pop' ? .075 : style === 'box' ? .058 : .062);
   ctx.textAlign = 'left';
   let lines, sp;
   for (let k = 0; k < 6; k++) {
-    ctx.font = fstr(UI_BOLD, fs); sp = ctx.measureText(' ').width;
+    ctx.font = fstr(L.B, fs); sp = ctx.measureText(' ').width;
     lines = [[]]; let lw = 0;
     for (const w of words) {
-      ctx.font = fstr(fontFor(w.i), fs * (fontFor(w.i) === SERIF ? 1.12 : 1));
+      ctx.font = fstr(fontFor(w.i), fs * sizeFor(w.i));
       const ww = ctx.measureText(w.w).width;
       if (lw && lw + sp + ww > W * .84) { lines.push([]); lw = 0; }
       lines[lines.length - 1].push({ ...w, ww }); lw += (lw ? sp : 0) + ww;
     }
     if (lines.length <= 2) break;
-    fs *= .85;
+    fs *= .86;
   }
-  const lh = fs * (style === 'box' ? 1.45 : 1.25);
-  const y0 = H * pos - (lines.length - 1) * lh / 2;
-  const pop = style === 'band' || style === 'mixte' ? ease((t - chunk.s) / .12) : backOut((t - chunk.s) / .18);
-  if (style === 'band' || style === 'mixte') ctx.globalAlpha = pop;
-  else { ctx.translate(W / 2, H * pos); ctx.scale(pop, pop); ctx.translate(-W / 2, -H * pos); }
+  const lh = fs * (style === 'box' ? 1.45 : 1.3), y0 = H * pos - (lines.length - 1) * lh / 2;
+  const appear = ez('expo.out')(clamp((t - chunk.s) / .25));
+  if (style === 'band' || style === 'hand' || style === 'highlight') ctx.globalAlpha = appear;
+  else { const k = ez('back.out(1.7)')(clamp((t - chunk.s) / .2)); ctx.translate(W / 2, H * pos); ctx.scale(k, k); ctx.translate(-W / 2, -H * pos); }
+  const accentInk = isLight(P.accent) ? '#111' : '#fff';
   lines.forEach((line, li) => {
     const total = line.reduce((a, w) => a + w.ww, 0) + sp * (line.length - 1);
     let x = (W - total) / 2; const y = y0 + li * lh;
-    if (style === 'box') {
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath(); ctx.roundRect(x - fs * .35, y - lh / 2, total + fs * .7, lh, fs * .25); ctx.fill();
-    }
+    if (style === 'box') { ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.roundRect(x - fs * .35, y - lh / 2, total + fs * .7, lh, fs * .25); ctx.fill(); }
     for (const w of line) {
-      const isCur = w.i === cur, spoken = t >= w.s;
-      const Fw = fontFor(w.i);
-      // Kinetic Text Pop : le mot clé grossit à l'instant où il est prononcé.
-      const kp = o.fx?.pop && (w.i === emph || style === 'pop') ? kineticPop(t - w.s) : 1;
+      const isCur = w.i === cur, spoken = t >= w.s, Fw = fontFor(w.i);
+      const kp = o.look.fx?.pop && (style === 'pop' ? isCur : w.i === emph) ? kineticPop(t - w.s) : 1;
       ctx.save();
       if (kp !== 1) { ctx.translate(x + w.ww / 2, y); ctx.scale(kp, kp); ctx.translate(-(x + w.ww / 2), -y); }
-      ctx.font = fstr(Fw, fs * (Fw === SERIF ? 1.12 : 1));
+      ctx.font = fstr(Fw, fs * sizeFor(w.i));
       if (style === 'box') {
-        if (isCur) { ctx.fillStyle = A; ctx.beginPath(); ctx.roundRect(x - fs * .12, y - fs * .6, w.ww + fs * .24, fs * 1.2, fs * .15); ctx.fill(); }
-        ctx.fillStyle = '#111111'; ctx.fillText(w.w, x, y + fs * .04);
-      } else if (style === 'mixte' || style === 'band') {
-        ctx.shadowColor = 'rgba(0,0,0,.6)'; ctx.shadowBlur = style === 'band' ? 0 : W * .02;
-        ctx.fillStyle = spoken ? '#fff' : 'rgba(255,255,255,.55)';
-        ctx.fillText(w.w, x, y);
-        ctx.shadowBlur = 0;
+        if (isCur) { ctx.fillStyle = P.accent; ctx.beginPath(); ctx.roundRect(x - fs * .12, y - fs * .6, w.ww + fs * .24, fs * 1.2, fs * .15); ctx.fill(); }
+        ctx.fillStyle = isCur ? accentInk : '#111'; ctx.fillText(w.w, x, y + fs * .04);
+      } else if (style === 'highlight') {
+        if (isCur || (spoken && w.i === emph)) marker(ctx, x - fs * .1, y - fs * .6, w.ww + fs * .2, fs * 1.15, ez('power2.out')(clamp((t - w.s) / .18)), P.accent);
+        ctx.fillStyle = isCur || (spoken && w.i === emph) ? accentInk : '#fff';
+        if (isCur || (spoken && w.i === emph)) ctx.fillText(w.w, x, y); else shadowText(ctx, w.w, x, y, W, .6);
+      } else if (style === 'hand' || style === 'band') {
+        ctx.fillStyle = w.i === emph ? P.accent : spoken || style === 'band' ? '#fff' : 'rgba(255,255,255,.75)';
+        if (style === 'band') ctx.fillText(w.w, x, y); else shadowText(ctx, w.w, x, y, W, .6);
       } else if (style === 'brackets') {
         const isEm = w.i === emph && spoken;
-        ctx.shadowColor = 'rgba(0,0,0,.6)'; ctx.shadowBlur = W * .02;
-        ctx.fillStyle = isEm || isCur ? A : spoken ? '#fff' : 'rgba(255,255,255,.6)';
-        ctx.fillText(w.w, x, y);
+        ctx.fillStyle = isEm || isCur ? P.accent : spoken ? '#fff' : 'rgba(255,255,255,.65)';
+        shadowText(ctx, w.w, x, y, W, .6);
         if (isEm) {
-          const k = ease((t - w.s) / .2), pad = fs * .35 * k + fs * .1, bh = fs * .62, bl = fs * .3;
-          ctx.strokeStyle = A; ctx.lineWidth = fs * .07; ctx.shadowBlur = 0;
-          ctx.beginPath();
+          const k = ez('expo.out')(clamp((t - w.s) / .25)), pad = fs * .35 * k + fs * .1, bh = fs * .62, bl = fs * .3;
+          ctx.strokeStyle = P.accent; ctx.lineWidth = fs * .07; ctx.beginPath();
           ctx.moveTo(x - pad + bl, y - bh); ctx.lineTo(x - pad, y - bh); ctx.lineTo(x - pad, y + bh); ctx.lineTo(x - pad + bl, y + bh);
           ctx.moveTo(x + w.ww + pad - bl, y - bh); ctx.lineTo(x + w.ww + pad, y - bh); ctx.lineTo(x + w.ww + pad, y + bh); ctx.lineTo(x + w.ww + pad - bl, y + bh);
           ctx.stroke();
         }
-        ctx.shadowBlur = 0;
-      } else {
-        ctx.save();
-        if (style === 'pop' && isCur) { ctx.translate(x + w.ww / 2, y); ctx.scale(1.12, 1.12); ctx.translate(-(x + w.ww / 2), -y); }
-        ctx.lineJoin = 'round'; ctx.lineWidth = fs * .18; ctx.strokeStyle = '#000000';
+      } else { // pop, karaoke
+        ctx.lineJoin = 'round'; ctx.lineWidth = fs * .16; ctx.strokeStyle = '#000';
         ctx.strokeText(w.w, x, y);
-        const on = style === 'pop' ? isCur : spoken;
-        ctx.fillStyle = on ? A : '#FFFFFF';
+        ctx.fillStyle = (style === 'pop' ? isCur : spoken) ? P.accent : '#fff';
         ctx.fillText(w.w, x, y);
-        ctx.restore();
       }
       ctx.restore();
       x += w.ww + sp;
@@ -319,86 +232,64 @@ function drawCaptionsInner(ctx, W, H, t, o) {
 }
 
 // ---------- Image complète ----------
-// o = { title, font, pal, hook, titleStart, titleDur, motions: [...], media: [{el, layout, start, dur, label, pos}],
-//       captions: {style, pos, chunks} | null }
+// o = { look, hook, titleStart, titleDur, motions, media, captions, depth (calque alpha) | null, photos, frame, noSync }
 export function render(ctx, W, H, t, o) {
   setFrame(o.frame || null);
   try { renderFrame(ctx, W, H, t, o); } finally { setFrame(null); }
 }
 
 function renderFrame(ctx, W, H, t, o) {
-  const P = PALETTES[o.pal], F = fontOf(o.font);
+  const L = lookContext(o.look);
+  const oo = { ...o, pal: palOf(o.look) };
   const isOn = x => t >= x.start && t <= x.start + x.dur;
-  const active = o.motions.filter(isOn);
+  const active = (o.motions || []).filter(isOn);
   const media = o.media || [];
-  // Seuls l'aperçu principal et l'export pilotent la lecture des vidéos ajoutées.
   if (!o.noSync) for (const m of media) syncMediaVideo(m, t - m.start, isOn(m));
   const mediaOn = media.filter(isOn);
-  let zoom = 1, shrink = null, dim = 0;
+  let zoom = 1, dim = 0, shrink = null;
   for (const m of active) {
-    const p = (t - m.start) / m.dur;
-    if (m.type === 'zoom') zoom *= 1 + .25 * env(p, .15, .25);
-    if (m.type === 'shrink') shrink = { m, e: env(p, .2, .18) };
-    if (DIMS.has(m.type)) dim = Math.max(dim, env(p, .1, .1));
+    const lt = t - m.start;
+    if (m.type === 'zoom') zoom *= zoomOf(m, lt);
+    if (m.type === 'shrink') shrink = m;
+    if (DIMS.has(m.type)) dim = Math.max(dim, clamp(stateOf(m, lt).a));
   }
-  for (const m of mediaOn) if (MEDIA_DIMS.has(m.layout)) dim = Math.max(dim, env((t - m.start) / m.dur, .1, .1));
+  for (const m of mediaOn) if (MEDIA_DIMS.has(m.layout)) dim = Math.max(dim, ez('power2.out')(clamp(Math.min(t - m.start, m.start + m.dur - t) / .3)));
   ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
   drawVideoRect(ctx, 0, 0, W, H, 0, zoom);
   if (dim > 0) {
-    // Fond flouté et assombri derrière les cartes.
     ctx.save(); ctx.globalAlpha = dim; ctx.filter = `blur(${Math.round(W * .02)}px) brightness(.5)`;
     drawVideoRect(ctx, -W * .05, -H * .05, W * 1.1, H * 1.1, 0, zoom);
     ctx.restore();
   }
+  const shrunk = shrink ? drawShrink(ctx, W, H, shrink, t - shrink.start, L, zoom) : false;
 
-  if (shrink) {
-    const { m, e } = shrink, P2 = (m.variant || 0) % 2 ? P.text : P.accent;
-    ctx.fillStyle = P.ink; ctx.globalAlpha = e * .9; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1;
-    const s = 1 - .4 * e, vw = W * s, vh = H * s, vx = (W - vw) / 2, vy = (H - vh) / 2 + H * .06 * e;
-    const pad = W * .035 * e, head = H * .1 * e;
-    ctx.fillStyle = P2;
-    ctx.beginPath(); ctx.roundRect(vx - pad, vy - head - pad, vw + pad * 2, vh + head + pad * 2, W * .04 * e); ctx.fill();
-    drawVideoRect(ctx, vx, vy, vw, vh, W * .025 * e, zoom);
-    const text = m.text ?? M.shrink.text;
-    if (text && e > .05) {
-      ctx.save(); ctx.globalAlpha = clamp((e - .5) * 2);
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = P.ink;
-      ctx.font = fstr(F, fitSize(ctx, text, F, vw * .9, head * .6));
-      ctx.fillText(text, W / 2, vy - head / 2 - pad / 2); ctx.restore();
-    }
-  }
   const fullMedia = mediaOn.some(m => m.layout === 'full');
-  // Le titre s'efface quand une carte, un plein écran ou un écran partagé occupe le haut
-  // (sauf en mode profondeur, où il passe justement derrière la personne).
-  const depthOn = !!(o.depth && !shrink && !fullMedia);
+  const depthOn = !!(o.depth && !shrunk && !fullMedia);
+  const titleOn = o.hook && (o.hook.l1 || o.hook.l2) && t >= o.titleStart && t <= o.titleStart + o.titleDur;
   const covered = dim > .3 || fullMedia || mediaOn.some(m => m.layout === 'split') || (!depthOn && active.some(m => FULLSCREEN.has(m.type)));
-  const titleOn = o.title && !covered && t >= o.titleStart && t <= o.titleStart + o.titleDur;
+  const showTitle = titleOn && !covered;
   const behind = m => depthOn && DEPTH_BEHIND.has(m.type);
-  const motion = m => drawMotionFx(ctx, W, H, m, t - m.start, o);
+  const glow = o.look.fx?.glow ? L.P.accent : null;
+  const draw = m => withGlow(ctx, glow && !['checklist', 'versus', 'comment', 'screen', 'stamp', 'colorcard'].includes(m.type) ? glow : null, W,
+    () => drawOverlay(ctx, W, H, m, t - m.start, { ...oo, depthBehind: behind(m) }, L));
+  const hookP = (t - o.titleStart) / o.titleDur;
 
-  // Couche 1 (milieu) : éléments placés derrière la personne.
-  for (const m of active) if (FULLSCREEN.has(m.type) && (!depthOn || behind(m))) motion(m);
-  let behindDrawn = active.some(m => behind(m));
-  for (const m of active) if (behind(m) && !FULLSCREEN.has(m.type)) motion(m);
-  if (depthOn && titleOn) { drawTitle(ctx, W, H, (t - o.titleStart) / o.titleDur, { ...o, part: 'back' }); behindDrawn = true; }
-  // Couche 2 (premier plan) : la personne détourée, redessinée par-dessus le texte.
+  // Couche du milieu : ce qui passe derrière la personne (ou les plein écran sans profondeur).
+  for (const m of active) if (FULLSCREEN.has(m.type) && !behind(m)) draw(m);
+  let behindDrawn = false;
+  for (const m of active) if (behind(m)) { draw(m); behindDrawn = true; }
+  if (depthOn && showTitle) { drawHook(ctx, W, H, hookP, o, L, 'back'); behindDrawn = true; }
   if (behindDrawn) drawPerson(ctx, W, H, zoom, o.depth);
-  if (depthOn && titleOn && o.title === 'depth') drawTitle(ctx, W, H, (t - o.titleStart) / o.titleDur, { ...o, part: 'front' });
+  if (depthOn && showTitle && o.look.hook === 'depth') drawHook(ctx, W, H, hookP, o, L, 'front');
 
-  for (const m of mediaOn) drawMedia(ctx, W, H, m, t - m.start, o);
-  for (const m of active) if (m.type !== 'zoom' && m.type !== 'shrink' && !FULLSCREEN.has(m.type) && !behind(m)) motion(m);
-  if (o.captions && o.captions.chunks.length && !fullMedia && !active.some(m => HIDES_CAPTIONS.has(m.type))) drawCaptions(ctx, W, H, t, o);
-  if (titleOn && !depthOn) drawTitle(ctx, W, H, (t - o.titleStart) / o.titleDur, o);
+  for (const m of mediaOn) drawMedia(ctx, W, H, m, t - m.start, oo);
+  for (const m of active) if (!FULLSCREEN.has(m.type) && !behind(m) && m.type !== 'zoom' && m.type !== 'shrink') draw(m);
+  if (o.captions && o.captions.chunks.length && !fullMedia && !active.some(m => HIDES_CAPTIONS.has(m.type)))
+    withGlow(ctx, glow && o.captions.style !== 'box' ? glow : null, W, () => drawCaptions(ctx, W, H, t, oo, L));
+  if (showTitle && !depthOn) withGlow(ctx, glow, W, () => drawHook(ctx, W, H, hookP, o, L));
 }
 
-function drawMotionFx(ctx, W, H, m, lt, o) {
-  ctx.save();
-  if (o.fx?.slide && SLIDE_IN.has(m.type)) slideBlur(ctx, W, H, lt / m.dur, .2);
-  withGlow(ctx, GLOWING.has(m.type) ? glowOf(o, PALETTES[o.pal]) : null, W, () => drawMotion(ctx, W, H, m, lt, o));
-  ctx.restore();
-}
-
-// La personne seule (vidéo × masque alpha), à la même place et au même zoom que la vidéo.
+// La personne seule (vidéo × masque alpha), au même cadrage que la vidéo.
 let personLayer = null;
 function drawPerson(ctx, W, H, zoom, alpha) {
   if (!personLayer) personLayer = document.createElement('canvas');

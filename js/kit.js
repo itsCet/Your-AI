@@ -12,18 +12,17 @@ export const FONTS = [
   { name: 'Instrument Serif', family: 'Instrument Serif', weight: 400, style: 'italic' },
 ];
 
-// panel = fond des cartes et des écrans partagés.
+// Palettes des looks. accent = couleur principale, accent2 = couleur secondaire,
+// ink = texte sur accent, card = fond des cartes sombres, paper = fond clair, panel = fond d'écran partagé.
 export const PALETTES = [
-  { name: 'Sunshine', accent: '#FFD60A', text: '#FFFFFF', ink: '#111111', panel: '#161616' },
-  { name: 'Signal', accent: '#FF3B30', text: '#FFFFFF', ink: '#111111', panel: '#161616' },
-  { name: 'Electric', accent: '#2F6BFF', text: '#FFFFFF', ink: '#0B0B0B', panel: '#10131C' },
-  { name: 'Mint', accent: '#3DDC97', text: '#FFFFFF', ink: '#0E1B14', panel: '#101814' },
-  { name: 'Bubblegum', accent: '#FF4FA3', text: '#FFFFFF', ink: '#1A0710', panel: '#1A0F15' },
-  { name: 'Mono', accent: '#FFFFFF', text: '#FFFFFF', ink: '#000000', panel: '#141414' },
-  { name: 'Or nuit', accent: '#FFC21A', text: '#FFFFFF', ink: '#17120A', panel: '#1A150C' },
-  { name: 'Corail studio', accent: '#E8553D', text: '#FFFFFF', ink: '#1B1B1B', panel: '#F3EFE8' },
-  { name: 'Cuivre', accent: '#F2B33D', text: '#FFFFFF', ink: '#1E0F06', panel: '#2A160B' },
-  { name: 'Rose bonbon', accent: '#E86AA6', text: '#FFFFFF', ink: '#2A0E1C', panel: '#FBEFF5' },
+  { id: 'sunlit', name: 'Sunlit', desc: 'Jaune chaud sur charbon', accent: '#FFD23F', accent2: '#FFFFFF', text: '#FFFFFF', ink: '#15130F', card: '#1C1A16', paper: '#FFF6DC', panel: '#161512' },
+  { id: 'gold', name: 'Or & crème', desc: 'Calme, premium', accent: '#E8C27A', accent2: '#F4EBDC', text: '#FFFFFF', ink: '#1E1810', card: '#211B13', paper: '#F4EBDC', panel: '#1A150E' },
+  { id: 'signal', name: 'Rouge signal', desc: 'Direct, énergique', accent: '#FF3B30', accent2: '#FFFFFF', text: '#FFFFFF', ink: '#FFFFFF', card: '#171212', paper: '#FFF1EF', panel: '#151111' },
+  { id: 'pink', name: 'Rose pop', desc: 'Fun, réseaux', accent: '#FF5FA8', accent2: '#FFD3E8', text: '#FFFFFF', ink: '#2A0B1A', card: '#1E1218', paper: '#FFE9F3', panel: '#1A0F15' },
+  { id: 'electric', name: 'Bleu électrique', desc: 'Tech, net', accent: '#3D7BFF', accent2: '#BFD3FF', text: '#FFFFFF', ink: '#FFFFFF', card: '#10141F', paper: '#EAF0FF', panel: '#0E121B' },
+  { id: 'mint', name: 'Menthe', desc: 'Frais, argent, santé', accent: '#3DDC97', accent2: '#D7FBEA', text: '#FFFFFF', ink: '#0B1F15', card: '#101A15', paper: '#E6FBF1', panel: '#0E1712' },
+  { id: 'coral', name: 'Corail studio', desc: 'Doux, éditorial', accent: '#EF6A4C', accent2: '#F6E7DD', text: '#FFFFFF', ink: '#FFFFFF', card: '#1D1714', paper: '#F6EFE8', panel: '#F3EFE8' },
+  { id: 'mono', name: 'Noir & blanc', desc: 'Sobre, intemporel', accent: '#FFFFFF', accent2: '#BDBDBD', text: '#FFFFFF', ink: '#000000', card: '#141414', paper: '#F2F2F2', panel: '#141414' },
 ];
 
 // Polices fixes utilisées par certains éléments (indépendantes du choix de police).
@@ -44,7 +43,7 @@ export const fontOf = name => FONTS.find(f => f.name === name) || FONTS[0];
 export const fstr = (F, size) => `${F.style || 'normal'} ${F.weight} ${Math.round(size)}px "${F.family}"`;
 export const isLight = hex => { const n = parseInt(hex.slice(1), 16); return ((n >> 16) * .3 + (n >> 8 & 255) * .59 + (n & 255) * .11) > 150; };
 // Couleur d'accent lisible même avec la palette Mono.
-export const hi = P => P.accent === '#FFFFFF' ? '#FFD60A' : P.accent;
+export const hi = P => P.accent;
 
 let video = null, frame = null;
 export function setVideo(v) { video = v; }
