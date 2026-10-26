@@ -6,7 +6,7 @@
 <title>Video Edit Studio</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Anton&family=Archivo+Black&family=Bebas+Neue&family=DM+Serif+Display&family=Inter:wght@400;600;800&family=Space+Mono:wght@700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Archivo+Black&family=Bebas+Neue&family=Caveat:wght@700&family=DM+Serif+Display&family=Instrument+Serif:ital@1&family=Inter:ital,wght@0,400;0,600;0,800;1,800&family=Playfair+Display:ital,wght@1,700&family=Space+Mono:wght@700&display=swap" rel="stylesheet">
 <style>
   :root {
     --bg: #111111; --panel: #1b1b1b; --card: #222222; --line: #333333;
@@ -82,6 +82,33 @@
   .swatches { display: flex; gap: 4px; margin: 8px 2px 0; }
   .swatches i { width: 18px; height: 18px; border-radius: 50%; border: 1px solid #444; }
   input[type=range] { accent-color: var(--yellow); }
+  textarea { width: 100%; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; resize: vertical; }
+  .card textarea.note { margin-top: 8px; font-size: 12px; }
+  .card .more { width: 100%; margin-top: 6px; background: none; border: 0; color: var(--muted); font-size: 12px; padding: 4px; }
+  .card .more:hover { color: var(--text); }
+  .verdicts button.on.v-keep { background: #1d3a26; border-color: #3ddc97; color: #3ddc97; }
+  .verdicts button.on.v-maybe { background: #3a3210; border-color: var(--yellow); color: var(--yellow); }
+  .verdicts button.on.v-drop { background: #3a1614; border-color: var(--red); color: var(--red); }
+  .card.dropped { opacity: .45; }
+  .card.maybe { border-color: #6b5a12; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+  .tab { background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; }
+  .tab.on { background: var(--text); color: #000; border-color: var(--text); }
+  .tab.on .muted { color: #555; }
+  .row-btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  .media-list { display: grid; gap: 12px; margin-top: 16px; }
+  .media-row { display: flex; gap: 14px; align-items: flex-start; margin: 0; }
+  .media-row .thumb { width: 96px; height: 128px; object-fit: cover; border-radius: 10px; background: #000; flex: none; }
+  .media-row .thumb.checker { object-fit: contain; background: repeating-conic-gradient(#2a2a2a 0 25%, #1f1f1f 0 50%) 0 0 / 16px 16px; }
+  .media-body { flex: 1; min-width: 0; }
+  .media-name { font-weight: 600; margin-bottom: 6px; display: flex; gap: 8px; align-items: center; overflow-wrap: anywhere; }
+  .chip { font-size: 11px; color: var(--yellow); border: 1px solid #5c5214; border-radius: 999px; padding: 1px 8px; font-weight: 400; }
+  .understood { color: #9be3b8; font-size: 12px; margin: 6px 0; }
+  .options.compact { margin: 6px 0 0; gap: 10px; font-size: 12px; }
+  .options.compact input[type=number] { width: 70px; }
+  .options.compact input[type=text] { width: 160px; }
+  .options input[type=number], .options input[type=text] { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; }
+  @media (max-width: 860px) { .media-row { flex-direction: column; } .media-row .thumb { width: 100%; height: 180px; } }
   @media (max-width: 860px) {
     main { grid-template-columns: 1fr; padding: 16px; }
     .stage { position: static; max-width: 300px; margin: 0 auto; }
@@ -120,7 +147,6 @@
   </section>
 </main>
 <video id="video" playsinline muted loop style="display:none"></video>
-<input type="file" id="file" accept="video/*" hidden>
 <script type="module" src="js/app.js"></script>
 </body>
 </html>

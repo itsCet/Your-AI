@@ -28,22 +28,53 @@ python3 serve.py          # ouvre http://localhost:8765/index.html
 
    « ↻ Autres propositions » en génère de nouvelles (polices, couleurs et styles différents).
 
-## Les 9 étapes
+## Ajouter tes images, PNG et vidéos (avec un commentaire)
+
+À l'étape **Médias**, dépose tes fichiers et écris à côté de chacun ce que tu veux en faire. L'app lit le commentaire et place le média toute seule :
+
+| Tu écris | L'app comprend |
+| --- | --- |
+| « logo de Claude quand je dis Claude » | sticker, pile sur le mot « Claude » de ta transcription |
+| « photo de mon pote Guillaume sur scène, plein écran » | plein écran, quand tu dis « Guillaume », étiquette « mon pote Guillaume sur scène » |
+| « capture de l'appli en haut pendant 4 s » | écran partagé (média en haut, toi en bas), 4 secondes |
+| « petit dans le coin en bas à gauche à 0:12 » | incrustation en bas à gauche, à 12 s |
+| « à la fin » / « au début » | placé à la fin / au début |
+
+Les PNG détourés deviennent des stickers. 5 mises en page : carte encadrée (fond flouté, REC, étiquette), plein écran, écran partagé, incrustation, sticker. Ce que l'app a compris s'affiche sous le commentaire (« ✓ Compris : … ») et tout reste modifiable à la main.
+
+## Les 10 étapes
 
 1. **Import** : dépose la vidéo, choisis la langue, l'analyse démarre.
-2. **Propositions** : 6 montages animés en direct sur ta vidéo. « Aperçu » pour le voir en grand, « Choisir » pour l'appliquer.
-3. **Hook** · 4. **Police** · 5. **Couleurs** · 6. **Titre** : ajuste le style (tout est prévisualisé en direct).
-7. **Motions** : Orbit, Carousel, Shrink card, Comment pop-up, Compteur, Word pop, Punch-in, Lower third. « Prendre » pour ajouter, « Plus comme ça » pour une variante.
-8. **Sous-titres** : 3 styles (Pop, Boîte, Karaoké), position réglable, texte corrigeable phrase par phrase.
-9. **Export** : coupe des blancs (sensibilité réglable, visible en rouge sur la timeline), timing de chaque motion, puis export.
+2. **Médias** : tes images, PNG et b-roll avec leur commentaire (voir plus haut).
+3. **Propositions** : 8 montages à la personnalité marquée, animés en direct sur ta vidéo avec tes médias :
+   - **Story doré** : cartes lumineuses, gros chiffre qui monte, tampon « 100% vrai », viseur REC, sous-titres avec le mot clé en serif doré ;
+   - **Ciné cuivré** : plein écran chaud et granuleux, « BAM » sur le rythme, phrase cinétique, crochets dorés autour du mot clé ;
+   - **Studio crème** : écran partagé, titre en stickers blancs, texte qui se tape, serif italique ;
+   - **Zéro montage** : note manuscrite, carte couleur, tampon « 1 prise » ;
+   - **Rose tag** : titre en étiquettes roses, incrustations, word pop ;
+   - **Viral punchy**, **Clean pro**, **Minimal**.
+4. **Hook** · 5. **Police** · 6. **Couleurs** · 7. **Titre** : ajuste le style (tout est prévisualisé en direct).
+8. **Motions** : 25 éléments en 4 familles (Infos, Stickers, Plein écran, Mouvement). Pour chacun : **Garder / Peut-être / Jeter** + une note « ce qui marche, ce qu'il faut changer », et « Plus comme ça » pour une variante.
+9. **Sous-titres** : 7 styles (Éditorial, Mixte, Crochets, Bandeau, Pop, Boîte, Karaoké), position réglable, texte corrigeable.
+10. **Export** :
+    - coupe des blancs (visible en rouge sur la timeline) ;
+    - **effets sonores** générés par l'app (pop, whoosh, impact, frappe, clic, ding), un son réglable par motion, mixés dans l'export ;
+    - timing de chaque motion ;
+    - export MP4 ;
+    - **couverture du reel** en PNG 1080 × 1920 avec ton titre ;
+    - **brief pour Claude** : un résumé (médias + commentaires, éléments gardés / jetés, notes) à coller dans ta conversation avec Claude pour qu'il ajuste le montage ou l'app.
 
 ## Structure
 
 | Fichier | Rôle |
 | --- | --- |
 | `index.html` | Mise en page et styles |
-| `js/app.js` | Interface, étapes, aperçu, timeline, export |
-| `js/render.js` | Dessin d'une image complète : vidéo, titre, sous-titres, motions |
+| `js/app.js` | Interface, étapes, aperçu, timeline, sons, export, couverture, brief |
+| `js/render.js` | Dessin d'une image complète : vidéo, médias, motions, sous-titres, titre |
+| `js/motions.js` | Bibliothèque des 25 motions |
+| `js/media.js` | Lecture des commentaires et mises en page des médias |
+| `js/sfx.js` | Effets sonores synthétisés |
+| `js/kit.js` | Polices, palettes, courbes d'animation, composants de dessin |
 | `js/analyze.js` | Analyse audio (blancs, temps forts) et transcription Whisper (Web Worker) |
 | `js/proposals.js` | Génération des propositions de montage |
 | `serve.py` | Serveur local + conversion MP4 via ffmpeg (`POST /convert`) |
