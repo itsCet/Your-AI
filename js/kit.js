@@ -46,9 +46,12 @@ export const isLight = hex => { const n = parseInt(hex.slice(1), 16); return ((n
 // Couleur d'accent lisible même avec la palette Mono.
 export const hi = P => P.accent === '#FFFFFF' ? '#FFD60A' : P.accent;
 
-let video = null;
+let video = null, frameSource = null;
 export function setVideo(v) { video = v; }
 export function getVideo() { return video; }
+// Copie figée de l'image vidéo en cours (effet profondeur) : garantit que l'image dessinée
+// est exactement celle dont on a calculé le masque.
+export function setFrameSource(c) { frameSource = c; }
 
 export function fitSize(ctx, text, F, maxW, size) {
   ctx.font = fstr(F, size);
@@ -78,7 +81,7 @@ export function drawFit(ctx, src, x, y, w, h, { mode = 'cover', r = 0, zoom = 1,
     const k = (mode === 'cover' ? Math.max(w / sw, h / sh) : Math.min(w / sw, h / sh)) * zoom;
     const dw = sw * k, dh = sh * k;
     ctx.drawImage(src, x + (w - dw) / 2, y + (h - dh) * cropY, dw, dh);
-  } else if (src === video || !src) {
+  } else if (src === video || src === frameSource || !src) {
     const g = ctx.createLinearGradient(x, y, x + w, y + h);
     g.addColorStop(0, '#3a3530'); g.addColorStop(1, '#14161c');
     ctx.fillStyle = g; ctx.fillRect(x, y, w, h);
@@ -88,7 +91,7 @@ export function drawFit(ctx, src, x, y, w, h, { mode = 'cover', r = 0, zoom = 1,
   }
   ctx.restore();
 }
-export const drawVideoRect = (ctx, x, y, w, h, r = 0, zoom = 1, cropY = .5) => drawFit(ctx, video, x, y, w, h, { r, zoom, cropY });
+export const drawVideoRect = (ctx, x, y, w, h, r = 0, zoom = 1, cropY = .5) => drawFit(ctx, frameSource || video, x, y, w, h, { r, zoom, cropY });
 
 // Pastille arrondie en petites capitales, avec un point de couleur optionnel.
 // align : 'left' | 'center' | 'right' par rapport à x. Retourne la largeur.

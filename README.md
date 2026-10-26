@@ -30,21 +30,21 @@ python3 serve.py          # ouvre http://localhost:8765/index.html
 
 ## Effet « Texte en arrière-plan » (profondeur 3D)
 
-Le texte passe **derrière toi** : la personne est détourée image par image, puis chaque image est composée en 3 couches :
+Le texte passe **derrière toi** : à chaque image, ta silhouette est détourée, puis l'image est composée en 3 couches :
 vidéo d'origine (fond) → texte du thème (milieu) → ta silhouette détourée (premier plan).
 
-```bash
-pip install -r requirements.txt   # opencv, mediapipe, rembg (Python 3.9 à 3.13)
-python3 serve.py
-```
+Coche **Effet Texte en Arrière-plan** dans « Effets du thème » (étapes Propositions et Titre). Passent derrière toi : le titre **Géant derrière toi** et les gros mots (beat cuts, compteur, word pop, phrase cinétique, mot plein écran).
 
-Coche **Effet Texte en Arrière-plan** dans « Effets du thème » (étapes Propositions et Titre). Une barre de progression suit le calcul. Deux moteurs :
-- **rembg** (`u2net_human_seg`) : le détourage le plus net, mais lent sur processeur (~0,5 s par image) ;
-- **mediapipe** (segmentation selfie multiclasse) : rapide et stable en vidéo.
+**Par défaut, tout se fait dans le navigateur**, sans serveur ni installation : [MediaPipe Tasks Vision](https://ai.google.dev/edge/mediapipe/solutions/vision/image_segmenter) (`ImageSegmenter`, accéléré par la carte graphique) segmente l'image exacte qui est dessinée, donc la silhouette n'a aucun décalage, même à l'export. Deux modèles : **Précis** (selfie multiclasse, 16 Mo, cheveux et vêtements) ou **Rapide** (250 Ko). Rien n'est envoyé en ligne. Fonctionne aussi sur un hébergement statique (Vercel, Netlify…).
 
-En mode **Auto**, l'app mesure rembg sur quelques images et bascule seule sur mediapipe si le calcul dépasserait ~1,5 × la durée de la vidéo. Passent derrière toi : le titre **Géant derrière toi** et les gros mots (beat cuts, compteur, word pop, phrase cinétique, mot plein écran). Le masque est gardé en cache : la même vidéo n'est détourée qu'une fois.
+Sur une machine sans bonne carte graphique, l'aperçu espace les calculs pour rester fluide ; l'export, lui, segmente toujours chaque image.
 
-Tu peux aussi le lancer à la main : `python3 depth.py ma-video.mp4 --preview apercu.png --text QUIT` (écrit le masque et une image de contrôle).
+**Option : moteur Python** (`depth.py`), si tu lances l'app avec `serve.py` et que tu installes `pip install -r requirements.txt` :
+- **rembg** (`u2net_human_seg`) : le détourage le plus net, mais lent (~0,5 s par image) ;
+- **mediapipe** Python : rapide ;
+- **auto** : mesure rembg et bascule sur mediapipe si le calcul dépasserait ~1,5 × la durée de la vidéo.
+
+Le serveur calcule une vidéo de masque une fois pour toutes (gardée en cache). En ligne de commande : `python3 depth.py ma-video.mp4 --preview apercu.png --text QUIT`.
 
 ## Motion design
 
@@ -102,15 +102,16 @@ Les PNG détourés deviennent des stickers. 5 mises en page : carte encadrée (f
 | `js/kit.js` | Polices, palettes, courbes d'animation, composants de dessin |
 | `js/analyze.js` | Analyse audio (blancs, temps forts) et transcription Whisper (Web Worker) |
 | `js/proposals.js` | Génération des propositions de montage |
-| `js/depth.js` | Récupère le masque, le synchronise avec la vidéo et le transforme en calque alpha |
+| `js/depth.js` | Détourage dans le navigateur (MediaPipe) ou via le serveur, calque alpha de la personne |
 | `depth.py` | Détourage de la personne (rembg / mediapipe) → vidéo de masque |
 | `serve.py` | Serveur local, conversion MP4 (`POST /convert`) et détourage (`POST /matte`) |
-| `requirements.txt` | Dépendances Python, seulement pour l'effet arrière-plan |
+| `requirements.txt` | Dépendances Python, seulement pour le moteur de détourage Python (optionnel) |
 
 Une seule fonction, `render()`, dessine chaque image. Elle sert aux vignettes, à l'aperçu et à l'export : **ce que tu vois est exactement ce qui est exporté**. L'export rejoue la vidéo, la dessine image par image sur un canvas en résolution native (1920 px max) et l'enregistre avec le son via `MediaRecorder`, en sautant les blancs coupés.
 
 ## Limites
 
 - L'export se fait en temps réel (une vidéo de 1 min prend environ 1 min).
-- L'effet arrière-plan suit le masque à ~0,1 s près pendant l'export : sur des gestes très rapides, le bord de la silhouette peut avoir un léger retard.
+- Avec le moteur Python (optionnel), la silhouette suit la vidéo à ~0,1 s près pendant l'export ; le moteur navigateur (par défaut) n'a pas ce décalage.
+- Sur Vercel (hébergement statique), la conversion MP4 par ffmpeg n'existe pas : l'export sort dans le format du navigateur (MP4 sur Safari et Chrome récents, sinon WebM).
 - Les vidéos très longues (plus de 10 min environ) demandent beaucoup de mémoire pour l'analyse audio.

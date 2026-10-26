@@ -1,5 +1,5 @@
 import { FONTS, PALETTES, TITLES, CAPTION_STYLES, MOTIONS, CATEGORIES, M, render, setVideo, fstr, clamp, GLOW_COLORS, DEFAULT_FX } from './render.js';
-import { depth, startMatting, resetMatting, updateDepth } from './depth.js';
+import { depth, BROWSER_MODELS, startBrowserMatting, startServerMatting, resetMatting, updateDepth } from './depth.js';
 import { decodeAudio, loudness, findSilences, cutsFromSilences, findPeaks, transcribe, cancelTranscription, chunkWords, retextChunk } from './analyze.js';
 import { makeProposals } from './proposals.js';
 import { MEDIA_LAYOUTS, POSITIONS, interpretMedia, hasAlpha } from './media.js';
@@ -28,7 +28,7 @@ const S = {
   hook: { l1: 'Quit', l2: 'your job?' }, font: 'Anton', pal: 0, title: 'editorial', titleDur: 3,
   taken: [], captions: { on: true, style: 'editorial', pos: .74 }, cuts: { on: false, sens: .3, minLen: .5, segs: [] },
   media: [], mediaLayout: 'card', sfx: { on: true, vol: .6 },
-  fx: { ...DEFAULT_FX, pop: true, slide: true }, depthOn: false, depthEngine: 'auto', file: null,
+  fx: { ...DEFAULT_FX, pop: true, slide: true }, depthOn: false, depthEngine: 'browser:multiclass', file: null,
   proposals: [], seed: 0, preview: -1, applied: '', notes: {},
   cards: MOTIONS.map(m => ({ type: m.id, variant: 0 })), cat: 'infos', review: {},
   uid: 1, server: { ffmpeg: false }, exporting: false,
@@ -111,11 +111,17 @@ function applyProposal(p) {
   if (p.depth) { S.depthOn = true; startDepth(); }
 }
 
-// ---------- Effet « texte en arrière-plan » (détourage calculé par serve.py / depth.py) ----------
+// ---------- Effet « texte en arrière-plan » ----------
+// Moteur « browser:… » : MediaPipe dans le navigateur, masque calculé image par image (par défaut,
+// aucun serveur nécessaire). Moteur « server:… » : serve.py / depth.py (rembg ou mediapipe Python).
 function startDepth() {
+  const [kind, name] = S.depthEngine.split(':');
+  if (kind === 'browser') return startBrowserMatting(name, depthProgress);
   if (!S.file || !S.server.matting?.length) return;
-  startMatting(S.file, S.depthEngine, depthProgress);
+  startServerMatting(S.file, name, depthProgress);
 }
+// L'effet est-il visible à l'écran en ce moment (montage en cours ou proposition en aperçu) ?
+const depthActive = () => S.depthOn || !!(S.step === ST.proposals && S.proposals[S.preview]?.depth);
 function depthProgress() {
   const bar = $('dbar'), msg = $('dmsg');
   // Pas de redessin complet pendant un export (il effacerait sa barre de progression).
@@ -124,27 +130,31 @@ function depthProgress() {
   msg.textContent = depthText();
 }
 function depthText() {
-  if (depth.status === 'uploading') return 'Envoi de la vidéo au moteur de détourage…';
+  if (depth.status === 'loading') return 'Chargement de MediaPipe et du modèle de détourage (une seule fois)…';
+  if (depth.status === 'uploading') return 'Envoi de la vidéo au serveur de détourage…';
   if (depth.status === 'running') return `Détourage en cours${depth.engine && depth.engine !== 'auto' ? ` (${depth.engine})` : ''} : image ${depth.done} / ${depth.total || '…'}${depth.log ? ` — ${depth.log}` : ''}`;
-  if (depth.status === 'done') return `Silhouette prête (${depth.engine}). Le texte passe maintenant derrière toi.`;
+  if (depth.status === 'done') return depth.kind === 'browser'
+    ? `Détourage en direct dans le navigateur (MediaPipe, ${depth.delegate === 'GPU' ? 'accéléré par la carte graphique' : 'processeur'}). Le texte passe derrière toi.`
+    : `Silhouette prête (${depth.engine}). Le texte passe maintenant derrière toi.`;
   if (depth.status === 'error') return 'Détourage impossible : ' + depth.error;
   return '';
 }
 
 // Panneau commun aux étapes de choix du thème : profondeur + motion design.
 function fxPanel(C) {
-  const engines = S.server.matting || [];
-  const busy = depth.status === 'uploading' || depth.status === 'running';
+  const engines = [
+    ...BROWSER_MODELS.map(([id, name]) => [`browser:${id}`, `Navigateur — ${name}`]),
+    ...(S.server.matting?.length ? [['server:auto', 'Serveur Python — auto (rembg, sinon mediapipe)'], ...S.server.matting.map(e => [`server:${e}`, `Serveur Python — ${e}`])] : []),
+  ];
+  const busy = ['loading', 'uploading', 'running'].includes(depth.status);
   C.append(el('div', { class: 'panel fx' },
     el('h2', {}, 'Effets du thème'),
     el('div', { class: 'options' },
-      el('label', {}, el('input', { type: 'checkbox', checked: S.depthOn, disabled: !engines.length || null,
+      el('label', {}, el('input', { type: 'checkbox', checked: S.depthOn,
         onchange: e => { S.depthOn = e.target.checked; if (S.depthOn) startDepth(); draw(); } }), el('b', {}, 'Effet Texte en Arrière-plan')),
-      engines.length ? el('label', {}, 'Moteur', select([['auto', 'Auto (rembg, mediapipe si trop lent)'], ...engines.map(e => [e, e])], S.depthEngine,
-        v => { S.depthEngine = v; if (S.depthOn) { resetMatting(); startDepth(); } draw(); }, { disabled: busy || null })) : null),
-    engines.length
-      ? el('p', { class: 'muted' }, 'Le titre « Géant derrière toi » et les gros mots (beat, compteur, word pop, phrase cinétique…) passent derrière ta silhouette.')
-      : el('p', { class: 'muted' }, 'Pour l\'activer : installe le détourage avec « pip install -r requirements.txt », puis relance « python3 serve.py ».'),
+      el('label', {}, 'Détourage', select(engines, S.depthEngine,
+        v => { S.depthEngine = v; resetMatting(); if (S.depthOn) startDepth(); draw(); }, { disabled: busy || null }))),
+    el('p', { class: 'muted' }, 'Le titre « Géant derrière toi » et les gros mots (beat, compteur, word pop, phrase cinétique…) passent derrière ta silhouette. Le détourage se fait sur ton ordinateur, rien n\'est envoyé en ligne.'),
     S.depthOn && depth.status !== 'idle' ? el('div', {},
       el('div', { id: 'dmsg', class: depth.status === 'error' ? 'err' : depth.status === 'done' ? 'understood' : 'muted' }, depthText()),
       busy ? el('div', { class: 'progress' }, el('div', { id: 'dbar', style: `width:${depth.total ? 100 * depth.done / depth.total : 2}%` })) : null) : null,
@@ -192,7 +202,7 @@ const mainCtx = $('main').getContext('2d');
 function frame(now) {
   const clock = now / 1000;
   const mc = $('main');
-  if (!S.exporting) updateDepth(video);
+  if (!S.exporting) updateDepth(video, depthActive());
   // Saut des passages coupés pendant la lecture.
   if (!video.paused && !S.exporting) {
     const seg = activeCuts().find(([a, b]) => video.currentTime >= a && video.currentTime < b - .02);
@@ -734,6 +744,7 @@ async function exportVideo() {
     const first = segs.find(([a]) => a <= .01);
     await seekTo(first ? first[1] : 0);
     lastT = video.currentTime - .01;
+    updateDepth(video, S.depthOn, true);
     render(ctx, W, H, video.currentTime, cfg);
 
     let finish;
@@ -750,11 +761,12 @@ async function exportVideo() {
         rec.pause(); video.pause();
         await seekTo(seg[1]);
         lastT = video.currentTime - .01;
+        updateDepth(video, S.depthOn, true);
         render(ctx, W, H, video.currentTime, cfg);
         rec.resume(); await video.play();
         busy = false;
       } else if (!busy) {
-        updateDepth(video);
+        updateDepth(video, S.depthOn, true);
         render(ctx, W, H, t, cfg);
         tickSfx(cfg, t);
       }
