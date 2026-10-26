@@ -54,7 +54,7 @@ Les PNG détourés deviennent des stickers. 5 mises en page : carte encadrée (f
    - **Rose tag** : titre en étiquettes roses, incrustations, word pop ;
    - **Viral punchy**, **Clean pro**, **Minimal**.
 4. **Hook** · 5. **Police** · 6. **Couleurs** · 7. **Titre** : ajuste le style (tout est prévisualisé en direct).
-8. **Motions** : 25 éléments en 4 familles (Infos, Stickers, Plein écran, Mouvement). Pour chacun : **Garder / Peut-être / Jeter** + une note « ce qui marche, ce qu'il faut changer », et « Plus comme ça » pour une variante.
+8. **Motions** : 26 éléments en 4 familles (Infos, Stickers, Plein écran, Mouvement). Pour chacun : **Garder / Peut-être / Jeter** + une note « ce qui marche, ce qu'il faut changer », et « Plus comme ça » pour une variante.
 9. **Sous-titres** : 7 styles (Éditorial, Mixte, Crochets, Bandeau, Pop, Boîte, Karaoké), position réglable, texte corrigeable.
 10. **Export** :
     - coupe des blancs (visible en rouge sur la timeline) ;
@@ -71,7 +71,7 @@ Les PNG détourés deviennent des stickers. 5 mises en page : carte encadrée (f
 | `index.html` | Mise en page et styles |
 | `js/app.js` | Interface, étapes, aperçu, timeline, sons, export, couverture, brief |
 | `js/render.js` | Dessin d'une image complète : vidéo, médias, motions, sous-titres, titre |
-| `js/motions.js` | Bibliothèque des 25 motions |
+| `js/motions.js` | Bibliothèque des 26 motions |
 | `js/media.js` | Lecture des commentaires et mises en page des médias |
 | `js/sfx.js` | Effets sonores synthétisés |
 | `js/kit.js` | Polices, palettes, courbes d'animation, composants de dessin |
