@@ -1,7 +1,8 @@
 import { FONTS, PALETTES, TITLES, CAPTION_STYLES, MOTIONS, CATEGORIES, M, render, setVideo, fstr, clamp, GLOW_COLORS, DEFAULT_FX } from './render.js';
 import { depth, BROWSER_MODELS, startBrowserMatting, startServerMatting, resetMatting, updateDepth, whenPrepared } from './depth.js';
 import { decodeAudio, loudness, findSilences, cutsFromSilences, findPeaks, transcribe, cancelTranscription, chunkWords, retextChunk } from './analyze.js';
-import { makeProposals } from './proposals.js';
+import { makeProposals, motionFromMoment } from './proposals.js';
+import { analyzeContent, motionText, TOPIC_NAMES } from './semantics.js';
 import { MEDIA_LAYOUTS, POSITIONS, interpretMedia, hasAlpha } from './media.js';
 import { SFX, DEFAULT_SFX, sfxEvents, playSfx } from './sfx.js';
 
@@ -19,7 +20,7 @@ const STEPS = [
 ];
 const ST = Object.fromEntries(STEPS.map((s, i) => [s[0], i]));
 const LANGS = [['fr', 'Français'], ['en', 'Anglais'], ['es', 'Espagnol'], ['de', 'Allemand'], ['it', 'Italien'], ['pt', 'Portugais'], ['ar', 'Arabe'], ['', 'Détection auto']];
-const VERDICTS = [['keep', 'Garder'], ['maybe', 'Peut-être'], ['drop', 'Jeter']];
+const KIND_NAMES = { number: 'Chiffre', list: 'Liste', question: 'Question', contrast: 'Avant / Après', emoji: 'Illustration', keyword: 'Mot clé', punch: 'Punchline', stamp: 'Mot fort', unique: 'Un parmi tous' };
 
 const S = {
   step: 0, fileName: '',
@@ -30,7 +31,7 @@ const S = {
   media: [], mediaLayout: 'card', sfx: { on: true, vol: .6 },
   fx: { ...DEFAULT_FX, pop: true, slide: true }, depthOn: false, depthEngine: 'browser:multiclass', file: null,
   proposals: [], seed: 0, preview: -1, applied: '', notes: {},
-  cards: MOTIONS.map(m => ({ type: m.id, variant: 0 })), cat: 'infos', review: {},
+  motionTab: 'moments', kindFilter: '', momentType: {}, momentText: {}, libCat: 'infos',
   uid: 1, server: { ffmpeg: false }, exporting: false,
 };
 
@@ -201,6 +202,11 @@ let live = []; // { ctx, W, H, cfg: () => o, loop: secondes | null (= temps de l
 const mainCtx = $('main').getContext('2d');
 
 function frame(now) {
+  try { drawFrame(now); } catch (e) { console.error(e); }
+  requestAnimationFrame(frame);
+}
+
+function drawFrame(now) {
   const clock = now / 1000;
   const mc = $('main');
   if (!S.exporting) updateDepth(video, depthActive());
@@ -219,10 +225,11 @@ function frame(now) {
     render(mainCtx, mc.width, mc.height, t, cfg);
     if (!video.paused && !S.exporting) tickSfx(cfg, t);
   }
-  for (const l of live) render(l.ctx, l.W, l.H, l.loop ? clock % l.loop : video.currentTime || 0, { ...l.cfg(), noSync: true });
+  for (const l of live) {
+    try { render(l.ctx, l.W, l.H, l.loop ? clock % l.loop : video.currentTime || 0, { ...l.cfg(), noSync: true }); } catch (e) { console.error(e); }
+  }
   $('time').textContent = `${fmt(video.currentTime)} / ${fmt(video.duration)}`;
   drawTimeline();
-  requestAnimationFrame(frame);
 }
 
 // Timeline : volume de la voix, coupes (rouge), titre et motions (jaune), médias (bleu), tête de lecture.
@@ -413,6 +420,7 @@ function stepProposals(C) {
   const A = S.A;
   C.append(el('div', { class: 'banner' },
     el('span', {}, A.words.length ? `${A.words.length} mots transcrits` : 'Pas de transcription (propositions génériques)',
+      A.topic ? ` · sujet : ${TOPIC_NAMES[A.topic]}` : '', A.moments?.length ? ` · ${A.moments.length} moments à illustrer` : '',
       ' · ', `${A.peaks.length} temps forts`, ' · ', `${S.media.length} média${S.media.length > 1 ? 's' : ''}`, ' · ',
       S.cuts.segs.length ? `${S.cuts.segs.length} blancs à couper (−${cutSaving(S.cuts.segs).toFixed(1)} s)` : 'aucun blanc à couper'),
     el('button', { class: 'btn', style: 'margin-left:auto', onclick: () => { S.seed++; regenerateProposals(); S.preview = 0; draw(); } }, '↻ Autres propositions')));
@@ -473,39 +481,99 @@ function stepTitle(C) {
   C.append(choiceGrid(TITLES, t => t.id === S.title, t => S.title = t.id, t => styleCfg({ title: t.id }), t => el('p', {}, t.desc)));
 }
 
-// ---------- Motions (avec revue Garder / Peut-être / Jeter + note) ----------
+// ---------- Motions : les moments de ta vidéo, et la bibliothèque ----------
+const momentById = id => S.A.moments?.find(m => m.id === id);
+const momentTypeOf = m => S.momentType[m.id] || m.candidates[0];
+// Motion prête à placer pour un moment (type et texte éventuellement modifiés par l'utilisateur).
+function momentMotion(m) {
+  const mo = motionFromMoment(m, momentTypeOf(m));
+  if (S.momentText[m.id] != null) mo.text = S.momentText[m.id];
+  return mo;
+}
+const sentenceAt = t => (S.A.sentences || []).find(s => t >= s.s - .2 && t <= s.e + .2);
+
+function toggleMoment(m) {
+  const on = S.taken.find(x => x.momentId === m.id);
+  if (on) S.taken = S.taken.filter(x => x !== on);
+  else S.taken.push({ ...momentMotion(m), uid: S.uid++ });
+  draw();
+}
+function refreshMoment(m) {
+  const i = S.taken.findIndex(x => x.momentId === m.id);
+  if (i >= 0) S.taken[i] = { ...momentMotion(m), uid: S.taken[i].uid };
+}
+
 function stepMotions(C) {
   appliedBanner(C);
-  C.append(el('div', { class: 'tabs' }, ...CATEGORIES.map(c => el('button', { class: 'tab' + (S.cat === c.id ? ' on' : ''), onclick: () => { S.cat = c.id; draw(); } },
-    c.name, ' ', el('span', { class: 'muted' }, String(S.cards.filter(x => M[x.type].cat === c.id).length))))));
+  const moments = S.A.moments || [];
+  C.append(el('div', { class: 'tabs' },
+    el('button', { class: 'tab' + (S.motionTab === 'moments' ? ' on' : ''), onclick: () => { S.motionTab = 'moments'; draw(); } },
+      'Moments de ta vidéo ', el('span', { class: 'muted' }, String(moments.length))),
+    el('button', { class: 'tab' + (S.motionTab === 'lib' ? ' on' : ''), onclick: () => { S.motionTab = 'lib'; draw(); } }, 'Bibliothèque'),
+    el('span', { class: 'muted', style: 'margin-left:auto;align-self:center' }, `${S.taken.filter(x => x.type !== 'zoom').length} animation(s) dans ton montage`)));
+  if (S.motionTab === 'lib') return stepLibrary(C);
+
+  if (!moments.length) {
+    C.append(el('div', { class: 'panel' }, el('h2', {}, 'Aucun moment repéré'),
+      el('p', { class: 'muted' }, S.A.words.length
+        ? 'La transcription ne contient ni chiffre, ni liste, ni question, ni mot fort exploitable. Utilise la bibliothèque pour ajouter des animations à la main.'
+        : 'Sans transcription, l\'app ne peut pas savoir ce que tu dis. Lance la transcription (étape Sous-titres) ou utilise la bibliothèque.')));
+    return;
+  }
+  C.append(el('p', { class: 'muted' }, S.A.topic ? `Sujet repéré : ${TOPIC_NAMES[S.A.topic]}. ` : '',
+    'Chaque carte est un moment de ta vidéo, avec l\'animation qui illustre ce que tu dis à cet instant. Clique sur une carte pour l\'ajouter ou la retirer.'));
+  const kinds = [...new Set(moments.map(m => m.kind))];
+  C.append(el('div', { class: 'tabs small' },
+    el('button', { class: 'tab' + (!S.kindFilter ? ' on' : ''), onclick: () => { S.kindFilter = ''; draw(); } }, 'Tous'),
+    ...kinds.map(k => el('button', { class: 'tab' + (S.kindFilter === k ? ' on' : ''), onclick: () => { S.kindFilter = k; draw(); } },
+      KIND_NAMES[k], ' ', el('span', { class: 'muted' }, String(moments.filter(m => m.kind === k).length))))));
   const g = el('div', { class: 'grid' });
-  S.cards.forEach((c, i) => {
-    const def = M[c.type];
-    if (def.cat !== S.cat) return;
-    const key = `${c.type}:${c.variant}`;
-    const rev = S.review[key] || (S.review[key] = { verdict: '', note: '' });
-    const taken = S.taken.find(m => m.type === c.type && m.variant === c.variant);
-    const verdict = taken ? 'keep' : rev.verdict === 'keep' ? '' : rev.verdict;
-    const mot = { type: c.type, variant: c.variant, start: .3, dur: def.dur, text: def.text };
-    const setVerdict = v => {
-      rev.verdict = v;
-      if (v === 'keep' && !taken) S.taken.push({ uid: S.uid++, type: c.type, variant: c.variant, start: nextStart(def.dur), dur: def.dur, text: def.text });
-      if (v !== 'keep' && taken) S.taken = S.taken.filter(m => m !== taken);
+  for (const m of moments) {
+    if (S.kindFilter && m.kind !== S.kindFilter) continue;
+    const added = S.taken.some(x => x.momentId === m.id);
+    const sent = sentenceAt(m.t);
+    const preview = () => { const mo = momentMotion(m); return { ...mo, start: .3, times: mo.times }; };
+    const card = el('div', { class: 'card clickable moment' + (added ? ' taken' : ''), onclick: e => { if (!e.target.closest('select,input,button')) toggleMoment(m); } },
+      el('span', { class: 'num' }, `${fmt1(m.t)} · ${KIND_NAMES[m.kind]}`),
+      el('span', { class: 'badge' }, added ? '✓ Ajouté' : '+ Ajouter'),
+      liveCanvas(() => ({ ...base(), title: null, captions: null, media: [], motions: [preview()], frame: m.frame }), preview().dur + .8),
+      el('p', { class: 'quote' }, `« ${(sent?.text || m.text).slice(0, 110)} »`),
+      el('div', { class: 'options compact' },
+        m.candidates.length > 1 ? select(m.candidates.map(c => [c, M[c].name]), momentTypeOf(m), v => { S.momentType[m.id] = v; delete S.momentText[m.id]; refreshMoment(m); draw(); }) : el('b', {}, M[m.candidates[0]].name),
+        el('button', { class: 'btn', onclick: () => { video.currentTime = Math.max(0, m.t - 1); video.play().catch(() => {}); } }, '▶ Voir')),
+      el('input', { type: 'text', class: 'mtext', value: S.momentText[m.id] ?? motionText(m, momentTypeOf(m)), title: M[momentTypeOf(m)].hint || '',
+        oninput: e => { S.momentText[m.id] = e.target.value; refreshMoment(m); } }));
+    g.append(card);
+  }
+  C.append(g);
+}
+
+// Bibliothèque : toutes les animations, ajoutées à la tête de lecture avec le texte de ce moment-là.
+function libraryText(type) {
+  const t = video.currentTime || 0;
+  const m = (S.A.moments || []).filter(x => x.candidates.includes(type)).sort((a, b) => Math.abs(a.t - t) - Math.abs(b.t - t))[0];
+  if (m && Math.abs(m.t - t) < 8) return motionText(m, type);
+  const s = sentenceAt(t);
+  if (s && M[type].text && !/\|/.test(M[type].text) && type !== 'emoji') return s.words.slice(0, 6).map(w => w.w).join(' ');
+  return M[type].text;
+}
+function stepLibrary(C) {
+  C.append(el('p', { class: 'muted' }, 'Place la tête de lecture où tu veux l\'animation, puis clique sur une carte : elle s\'ajoute à ce moment avec le texte de ce que tu dis (modifiable à l\'étape Export).'));
+  C.append(el('div', { class: 'tabs small' }, ...CATEGORIES.map(c => el('button', { class: 'tab' + (S.libCat === c.id ? ' on' : ''), onclick: () => { S.libCat = c.id; draw(); } }, c.name))));
+  const g = el('div', { class: 'grid' });
+  for (const def of MOTIONS) {
+    if (def.cat !== S.libCat) continue;
+    const n = S.taken.filter(x => x.type === def.id).length;
+    const sample = { type: def.id, variant: 0, start: .3, dur: def.dur, text: libraryText(def.id) };
+    g.append(el('div', { class: 'card clickable' + (n ? ' taken' : ''), onclick: () => {
+      const t = +(video.currentTime || 0).toFixed(2);
+      S.taken.push({ uid: S.uid++, type: def.id, variant: 0, start: t, dur: def.dur, text: libraryText(def.id) });
       draw();
-    };
-    g.append(el('div', { class: 'card' + (verdict === 'keep' ? ' taken' : verdict === 'drop' ? ' dropped' : verdict === 'maybe' ? ' maybe' : '') },
-      el('span', { class: 'num' }, `R${String(i + 1).padStart(2, '0')}${'ABC'[c.variant % 3]}`),
-      liveCanvas(() => ({ ...base(), title: null, captions: null, media: [], motions: [mot] }), def.dur + .8),
-      el('h3', {}, def.name + (c.variant ? ` · v${c.variant + 1}` : '')),
-      el('p', {}, def.desc),
-      el('div', { class: 'row verdicts' }, ...VERDICTS.map(([v, n]) =>
-        el('button', { class: 'v-' + v + (verdict === v ? ' on' : ''), onclick: () => setVerdict(verdict === v ? '' : v) }, n))),
-      el('textarea', { rows: '2', class: 'note', placeholder: 'Ce qui marche, ce qu\'il faut changer', value: rev.note, oninput: e => { rev.note = e.target.value; } }),
-      el('button', { class: 'more', onclick: () => {
-        const v = Math.max(...S.cards.filter(x => x.type === c.type).map(x => x.variant)) + 1;
-        S.cards.splice(i + 1, 0, { type: c.type, variant: v }); draw();
-      } }, '+ Plus comme ça')));
-  });
+    } },
+      el('span', { class: 'badge' }, n ? `✓ ${n} dans le montage` : `+ Ajouter à ${fmt1(video.currentTime || 0)}`),
+      liveCanvas(() => ({ ...base(), title: null, captions: null, media: [], motions: [sample] }), def.dur + .8),
+      el('h3', {}, def.name), el('p', {}, def.desc)));
+  }
   C.append(g);
 }
 
@@ -547,6 +615,8 @@ async function runTranscription() {
   }
   A.transcribing = false;
   A.chunks = chunkWords(A.words);
+  Object.assign(A, analyzeContent(A.words, A.peaks, A.duration));
+  captureMomentFrames();
   A.status = 'done';
   S.media.forEach(interpret);
   regenerateProposals();
@@ -645,18 +715,26 @@ function brief() {
     [...S.taken].sort((a, b) => a.start - b.start).forEach(m => L.push(`- ${fmt1(m.start)} ${M[m.type].name}${m.text ? ` — « ${m.text} »` : ''}`));
     L.push('');
   }
-  const reviewed = Object.entries(S.review).filter(([, r]) => r.verdict || r.note);
-  if (reviewed.length) {
-    L.push('## Revue des éléments');
-    for (const [k, r] of reviewed) {
-      const [type, v] = k.split(':');
-      L.push(`- ${M[type].name}${+v ? ` v${+v + 1}` : ''} : ${VERDICTS.find(x => x[0] === r.verdict)?.[1] || 'sans avis'}${r.note ? ` — ${r.note}` : ''}`);
-    }
-    L.push('');
-  }
   const notes = Object.entries(S.notes).filter(([, n]) => n);
   if (notes.length) { L.push('## Notes sur les propositions'); notes.forEach(([n, t]) => L.push(`- ${n} : ${t}`)); L.push(''); }
   return L.join('\n');
+}
+
+// Image de la vidéo à chaque moment repéré (fond des cartes « Moments de ta vidéo »).
+async function captureMomentFrames() {
+  const file = S.file, moments = S.A.moments || [];
+  if (!file || !moments.length) return;
+  const v = Object.assign(document.createElement('video'), { src: URL.createObjectURL(file), muted: true, playsInline: true, preload: 'auto' });
+  try {
+    await new Promise((res, rej) => { v.addEventListener('loadeddata', res, { once: true }); v.addEventListener('error', rej, { once: true }); });
+    const w = 270, h = Math.round(w * v.videoHeight / v.videoWidth);
+    for (const m of moments) {
+      if (S.file !== file) break;
+      await new Promise(res => { v.addEventListener('seeked', res, { once: true }); v.currentTime = Math.min(v.duration - .05, m.t + .2); });
+      m.frame = await createImageBitmap(v, { resizeWidth: w, resizeHeight: h });
+    }
+  } catch { /* les cartes gardent l'image en cours de la vidéo */ }
+  v.removeAttribute('src');
 }
 
 // ---------- Import & analyse ----------
@@ -689,6 +767,8 @@ async function loadFile(file) {
       A.transcribing = false;
     }
     A.chunks = chunkWords(A.words);
+    Object.assign(A, analyzeContent(A.words, A.peaks, A.duration));
+    captureMomentFrames();
     A.status = 'done';
     S.media.forEach(interpret);
     regenerateProposals();

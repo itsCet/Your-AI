@@ -18,13 +18,21 @@ python3 serve.py          # ouvre http://localhost:8765/index.html
 
 1. **Audio** : volume de la voix, détection des **blancs** (à couper) et des **temps forts** (pour placer des zooms).
 2. **Transcription mot à mot** avec Whisper (`whisper-base`), exécutée dans le navigateur via [transformers.js](https://github.com/huggingface/transformers.js). Le premier lancement télécharge le modèle (~200 Mo), ensuite il est en cache. Utilise le GPU (WebGPU) s'il y en a un, sinon le processeur.
-3. **6 propositions de montage** construites à partir de ce que tu dis :
-   - le **hook** est tiré de ta première phrase, d'une question ou du moment le plus fort ;
-   - un **compteur** apparaît quand tu prononces un chiffre (« 10 000 abonnés ») ;
-   - une **bulle de commentaire** reprend une question que tu poses ;
-   - un **word pop** reprend les mots clés d'une phrase ;
-   - des **punch-in** tombent sur les temps forts de ta voix ;
-   - une **carte de fin** avec un appel à l'action (Abonne-toi, Partie 2 ?, …).
+3. **Compréhension de ce que tu dis** (`js/semantics.js`) : l'app repère dans la transcription des **moments à illustrer**, avec leur texte exact :
+
+   | Ce que tu dis | Ce que l'app en fait |
+   | --- | --- |
+   | « en dix minutes », « moins de 5 euros », « 50 % » | carte avec le chiffre qui monte (« 10 / MINUTES ») ou compteur |
+   | « d'abord… ensuite… enfin… » ou « il faut des tomates, de l'ail et du basilic » | checklist dont chaque ligne se coche **au moment où tu la dis** |
+   | « ce n'est pas la crème mais le parmesan » | Avant / Après : ✗ Crème (barré au moment du « mais ») → ✓ Parmesan |
+   | un objet ou une idée : « tomates », « argent », « téléphone »… | emoji qui illustre le mot (🍅 💶 📱), environ 250 mots dans 9 thèmes |
+   | une question | la question tapée dans une bulle |
+   | une phrase courte dite avec force | phrase cinétique plein écran |
+   | « vraiment », « jamais », « secret », « gratuit »… | tampon |
+   | « un seul », « le seul », « parmi tous » | une case allumée parmi les autres |
+
+   Le **sujet** de la vidéo (cuisine, argent, tech, sport, santé, voyage, beauté…) est deviné à partir des mots employés et choisit les couleurs du montage « Sur mesure ».
+4. **8 propositions de montage** : chacune a son style (police, couleurs, titre, sous-titres, effets) et sa façon de traduire ces moments en animations, plus ou moins dense. Rien n'est inventé : tous les textes viennent de ta vidéo.
 
    « ↻ Autres propositions » en génère de nouvelles (polices, couleurs et styles différents).
 
@@ -75,15 +83,11 @@ Les PNG détourés deviennent des stickers. 5 mises en page : carte encadrée (f
 
 1. **Import** : dépose la vidéo, choisis la langue, l'analyse démarre.
 2. **Médias** : tes images, PNG et b-roll avec leur commentaire (voir plus haut).
-3. **Propositions** : 8 montages à la personnalité marquée, animés en direct sur ta vidéo avec tes médias :
-   - **Story doré** : cartes lumineuses, gros chiffre qui monte, tampon « 100% vrai », viseur REC, sous-titres avec le mot clé en serif doré ;
-   - **Ciné cuivré** : plein écran chaud et granuleux, « BAM » sur le rythme, phrase cinétique, crochets dorés autour du mot clé ;
-   - **Studio crème** : écran partagé, titre en stickers blancs, texte qui se tape, serif italique ;
-   - **Zéro montage** : note manuscrite, carte couleur, tampon « 1 prise » ;
-   - **Rose tag** : titre en étiquettes roses, incrustations, word pop ;
-   - **Viral punchy**, **Clean pro**, **Minimal**.
+3. **Propositions** : 8 montages construits à partir de ce que tu dis, chacun avec sa personnalité (Sur mesure, Derrière toi, Story doré, Ciné cuivré, Studio crème, Rose tag, Clean pro, Minimal), animés en direct sur ta vidéo avec tes médias.
 4. **Hook** · 5. **Police** · 6. **Couleurs** · 7. **Titre** : ajuste le style (tout est prévisualisé en direct).
-8. **Motions** : 26 éléments en 4 familles (Infos, Stickers, Plein écran, Mouvement). Pour chacun : **Garder / Peut-être / Jeter** + une note « ce qui marche, ce qu'il faut changer », et « Plus comme ça » pour une variante.
+8. **Motions** :
+   - **Moments de ta vidéo** : une carte par moment repéré, avec l'image de ta vidéo à cet instant, la phrase dite et l'animation qui l'illustre. Clique sur la carte pour l'ajouter ou la retirer ; tu peux changer le type d'animation et corriger le texte.
+   - **Bibliothèque** : toutes les animations, ajoutées à la tête de lecture avec le texte de ce que tu dis à ce moment-là.
 9. **Sous-titres** : 7 styles (Éditorial, Mixte, Crochets, Bandeau, Pop, Boîte, Karaoké), position réglable, texte corrigeable.
 10. **Export** :
     - coupe des blancs (visible en rouge sur la timeline) ;
@@ -100,7 +104,8 @@ Les PNG détourés deviennent des stickers. 5 mises en page : carte encadrée (f
 | `index.html` | Mise en page et styles |
 | `js/app.js` | Interface, étapes, aperçu, timeline, sons, export, couverture, brief |
 | `js/render.js` | Dessin d'une image complète : vidéo, médias, motions, sous-titres, titre |
-| `js/motions.js` | Bibliothèque des 26 motions |
+| `js/semantics.js` | Compréhension du discours : chiffres, listes, oppositions, questions, objets à illustrer, sujet |
+| `js/motions.js` | Bibliothèque des 28 motions |
 | `js/media.js` | Lecture des commentaires et mises en page des médias |
 | `js/sfx.js` | Effets sonores synthétisés |
 | `js/kit.js` | Polices, palettes, courbes d'animation, composants de dessin |

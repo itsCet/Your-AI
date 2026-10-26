@@ -91,6 +91,12 @@
   .verdicts button.on.v-drop { background: #3a1614; border-color: var(--red); color: var(--red); }
   .card.dropped { opacity: .45; }
   .card.maybe { border-color: #6b5a12; }
+  .card .badge { position: absolute; top: 16px; right: 18px; z-index: 1; font-size: 11px; font-weight: 600; background: rgba(0,0,0,.65); color: #fff; border-radius: 999px; padding: 3px 9px; }
+  .card.taken .badge { background: var(--yellow); color: #000; }
+  .card.moment .num { background: rgba(0,0,0,.65); border-radius: 999px; padding: 3px 9px; top: 16px; left: 16px; font-size: 11px; }
+  .card .quote { color: var(--text); font-style: italic; margin: 10px 2px 8px; font-size: 12px; }
+  .card .mtext { width: 100%; margin-top: 8px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font-size: 12px; }
+  .tabs.small .tab { padding: 4px 11px; font-size: 12px; }
   .tabs { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
   .tab { background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; }
   .tab.on { background: var(--text); color: #000; border-color: var(--text); }

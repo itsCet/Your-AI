@@ -15,30 +15,33 @@ export const CATEGORIES = [
 export const MOTIONS = [
   // Infos : cartes et données, inspirées des montages « storytelling ».
   { id: 'statcard', cat: 'infos', name: 'Carte chiffre', desc: 'Grosse carte lumineuse, le chiffre monte', dur: 3,
-    text: "J'ai fait courir|40+|Personnes · Kiyo Festival", hint: 'Titre | chiffre | étiquettes séparées par ·' },
+    text: 'Le chiffre|100+|au total', hint: 'Titre | chiffre | étiquettes séparées par ·' },
   { id: 'checklist', cat: 'infos', name: 'Checklist', desc: 'Une liste qui se coche ligne par ligne', dur: 3.6,
-    text: 'Qui me cherchait|Les médias|40+ personnes|Tout le staff', hint: 'Titre | ligne 1 | ligne 2 | …' },
+    text: 'Les étapes|Première idée|Deuxième idée|Troisième idée', hint: 'Titre | ligne 1 | ligne 2 | …' },
+  { id: 'versus', cat: 'infos', name: 'Avant / Après', desc: 'Ce qu\'il ne faut pas faire, barré, puis la bonne option', dur: 3.2,
+    text: 'Ce qu\'on croit|Ce qui marche', hint: 'À éviter | à faire' },
   { id: 'progress', cat: 'infos', name: 'Jauge', desc: 'Une barre qui monte ou s\'effondre', dur: 2.8,
     text: 'Crédibilité|100|13', hint: 'Libellé | départ % | arrivée %' },
   { id: 'grid', cat: 'infos', name: 'Un parmi tous', desc: 'Une case allumée dans une foule de cases', dur: 3,
-    text: 'Dans toute la foule|1 seul en rose', hint: 'Titre | étiquette du bas' },
+    text: 'Parmi tous|un seul', hint: 'Titre | étiquette du bas' },
   { id: 'counter', cat: 'infos', name: 'Compteur', desc: 'Un chiffre qui monte', dur: 2.4, text: '10000 vues', hint: 'Texte avec un nombre' },
   { id: 'lower', cat: 'infos', name: 'Lower third', desc: 'Bandeau nom qui glisse', dur: 3, text: 'Ton Nom · Créateur', hint: 'Nom · rôle' },
   { id: 'comment', cat: 'infos', name: 'Comment pop-up', desc: 'Une bulle de commentaire apparaît', dur: 2.6, text: 'Love this, tell me more!' },
   { id: 'name', cat: 'infos', name: 'Nom, dessiné', desc: 'Ton nom s\'écrit en haut, ton rôle dessous', dur: 3, text: 'Ton Nom|Créateur de contenu', hint: 'Nom | rôle' },
   { id: 'prompt', cat: 'infos', name: 'Texte tapé', desc: 'Une phrase se tape avec un curseur', dur: 3, text: 'Monte-moi ce reel.' },
   // Stickers : petits éléments posés près du visage.
-  { id: 'stamp', cat: 'stickers', name: 'Tampon', desc: 'Un mot tamponné de travers', dur: 2, text: '100% vrai' },
-  { id: 'note', cat: 'stickers', name: 'Note manuscrite', desc: 'Une note écrite à la main près de l\'épaule', dur: 2.6, text: 'une seule prise' },
-  { id: 'colorcard', cat: 'stickers', name: 'Carte couleur', desc: 'Une carte pleine couleur avec quelques mots', dur: 2.4, text: 'zéro montage' },
+  { id: 'emoji', cat: 'stickers', name: 'Illustration', desc: 'Un emoji qui illustre le mot que tu dis', dur: 2.2, text: '💡|Idée', hint: 'Emoji | mot' },
+  { id: 'stamp', cat: 'stickers', name: 'Tampon', desc: 'Un mot tamponné de travers', dur: 2, text: 'Important' },
+  { id: 'note', cat: 'stickers', name: 'Note manuscrite', desc: 'Une note écrite à la main près de l\'épaule', dur: 2.6, text: 'à retenir' },
+  { id: 'colorcard', cat: 'stickers', name: 'Carte couleur', desc: 'Une carte pleine couleur avec quelques mots', dur: 2.4, text: 'mot clé' },
   { id: 'numbers', cat: 'stickers', name: 'Étapes 1 2 3', desc: 'Des numéros qui apparaissent un par un', dur: 3, text: '3', hint: 'Nombre d\'étapes' },
   { id: 'typing', cat: 'stickers', name: 'En train d\'écrire', desc: 'La bulle « … » qui attend une réponse', dur: 1.8 },
   { id: 'words', cat: 'stickers', name: 'Word pop', desc: 'Les mots claquent un par un', dur: 2.4, text: 'Film once post all week' },
   // Plein écran : cartes de coupe sur fond chaud granuleux.
-  { id: 'beat', cat: 'plein', name: 'Beat cuts', desc: 'Des mots plein écran qui claquent sur le rythme', dur: 1.8, text: 'BAM BAM CUT', hint: 'Mots séparés par des espaces' },
+  { id: 'beat', cat: 'plein', name: 'Beat cuts', desc: 'Des mots plein écran qui claquent sur le rythme', dur: 1.8, text: 'UN DEUX TROIS', hint: 'Mots séparés par des espaces' },
   { id: 'countdown', cat: 'plein', name: 'Compte à rebours', desc: '3, 2, 1 en plein écran', dur: 2.4, text: '3' },
-  { id: 'kinetic', cat: 'plein', name: 'Phrase cinétique', desc: 'La phrase se construit mot par mot, plein écran', dur: 3, text: 'Les montages sont longs.' },
-  { id: 'bigword', cat: 'plein', name: 'Un mot, plein écran', desc: 'Un seul mot en serif italique sur fond chaud', dur: 1.6, text: 'edits' },
+  { id: 'kinetic', cat: 'plein', name: 'Phrase cinétique', desc: 'La phrase se construit mot par mot, plein écran', dur: 3, text: 'Ta phrase forte ici.' },
+  { id: 'bigword', cat: 'plein', name: 'Un mot, plein écran', desc: 'Un seul mot en serif italique sur fond chaud', dur: 1.6, text: 'mot' },
   // Mouvement : animations de cadre.
   { id: 'spotlight', cat: 'mouvement', name: 'Spotlight', desc: 'Tout s\'assombrit sauf toi', dur: 2.4 },
   { id: 'recframe', cat: 'mouvement', name: 'Viseur REC', desc: 'Cadre caméra avec REC et timecode', dur: 3 },
@@ -123,7 +126,8 @@ export function drawMotion(ctx, W, H, m, lt, o) {
       ctx.fillStyle = 'rgba(14,14,14,.88)'; ctx.beginPath(); ctx.roundRect(x, y, w, h, fs * .7); ctx.fill();
       label(ctx, x + fs, y + fs * 1.3, title, fs * .62, 'rgba(255,255,255,.6)', 'left');
       rows.forEach((r, i) => {
-        const k = ease((p - .1 - i * (.6 / rows.length)) / .1);
+        const at = m.times?.[i] != null ? m.times[i] / m.dur : .1 + i * (.6 / rows.length);
+        const k = ease((p - at) / .08);
         if (k <= 0) return;
         const ry = y + fs * 2.6 + i * rh + rh / 2;
         ctx.globalAlpha = e * k;
@@ -287,6 +291,50 @@ export function drawMotion(ctx, W, H, m, lt, o) {
         ctx.fillStyle = A; ctx.fillRect(x + fs * .5, y + h * .62 + fs * .45, cw, fs * .08);
         if (blink) { ctx.fillStyle = '#111'; ctx.fillRect(x + fs * .55 + cw, y + h * .62 - fs * .4, fs * .05, fs * .8); }
       }
+      break;
+    }
+    case 'emoji': {
+      const [em, word] = fields(text, 2);
+      const r = W * .15, k = backOut(p / .16), bob = Math.sin(lt * 3) * W * .006;
+      ctx.globalAlpha = ease((1 - p) / .12);
+      ctx.translate(v % 2 ? W * .24 : W * .76, H * .36 + bob); ctx.rotate((v % 2 ? 1 : -1) * .08 * (1 - ease(p / .3))); ctx.scale(k, k);
+      ctx.shadowColor = 'rgba(0,0,0,.3)'; ctx.shadowBlur = W * .04;
+      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(0, 0, r, 0, 7); ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.font = `${Math.round(r * 1.15)}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif`;
+      ctx.fillText(em, 0, r * .06);
+      if (word) {
+        ctx.globalAlpha *= ease((p - .12) / .15);
+        pill(ctx, 0, r * 1.35, word, { size: W * .024, bg: A, fg: isLight(A) ? P.ink : '#fff', align: 'center', border: null });
+      }
+      break;
+    }
+    case 'versus': {
+      const [bad, good] = fields(text, 2);
+      const turn = m.turn != null ? clamp(m.turn / m.dur, .15, .7) : .4;
+      const w = W * .78, fs = W * .05, rh = fs * 2.2, x = (W - w) / 2, y = H * .2;
+      ctx.globalAlpha = e;
+      ctx.fillStyle = 'rgba(14,14,14,.9)'; ctx.beginPath(); ctx.roundRect(x, y, w, rh * 2 + fs, fs * .6); ctx.fill();
+      const row = (txt, yy, ok, k) => {
+        if (k <= 0) return;
+        ctx.save(); ctx.globalAlpha = e * k; ctx.textAlign = 'left';
+        const cx = x + fs * 1.1;
+        ctx.fillStyle = ok ? '#3DDC97' : '#FF5A4F'; ctx.beginPath(); ctx.arc(cx, yy, fs * .5, 0, 7); ctx.fill();
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = fs * .12; ctx.lineCap = 'round'; ctx.beginPath();
+        if (ok) { ctx.moveTo(cx - fs * .22, yy); ctx.lineTo(cx - fs * .05, yy + fs * .18); ctx.lineTo(cx + fs * .24, yy - fs * .18); }
+        else { ctx.moveTo(cx - fs * .18, yy - fs * .18); ctx.lineTo(cx + fs * .18, yy + fs * .18); ctx.moveTo(cx + fs * .18, yy - fs * .18); ctx.lineTo(cx - fs * .18, yy + fs * .18); }
+        ctx.stroke();
+        const f = fitSize(ctx, txt, UI_BOLD, w - fs * 2.8, fs);
+        ctx.font = fstr(UI_BOLD, f); ctx.fillStyle = ok ? '#fff' : 'rgba(255,255,255,.6)';
+        ctx.fillText(txt, cx + fs * .9, yy + f * .05);
+        if (!ok && p > turn) { // barré au moment du « mais »
+          const tw = ctx.measureText(txt).width * ease((p - turn) / .12);
+          ctx.strokeStyle = '#FF5A4F'; ctx.lineWidth = fs * .09; ctx.beginPath(); ctx.moveTo(cx + fs * .9, yy); ctx.lineTo(cx + fs * .9 + tw, yy); ctx.stroke();
+        }
+        ctx.restore();
+      };
+      row(bad, y + fs * .5 + rh / 2, false, ease(p / .12));
+      row(good, y + fs * .5 + rh * 1.5, true, ease((p - turn - .05) / .12));
       break;
     }
     case 'beat': {

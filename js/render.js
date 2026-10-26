@@ -1,6 +1,6 @@
 // Rendu d'une image complète : vidéo, médias, motions, sous-titres et titre.
 // La même fonction sert aux vignettes, à l'aperçu et à l'export.
-import { PALETTES, FONTS, fontOf, fstr, clamp, ease, backOut, env, fitSize, drawVideoRect, drawFit, hi, getVideo, SERIF, UI_BOLD, kineticPop, slideBlur, withGlow } from './kit.js';
+import { PALETTES, FONTS, fontOf, fstr, clamp, ease, backOut, env, fitSize, drawVideoRect, drawFit, hi, getVideo, SERIF, UI_BOLD, kineticPop, slideBlur, withGlow, setFrame } from './kit.js';
 import { MOTIONS, M, CATEGORIES, DIMS, HIDES_CAPTIONS, FULLSCREEN, drawMotion } from './motions.js';
 import { drawMedia, syncMediaVideo, MEDIA_DIMS } from './media.js';
 
@@ -16,7 +16,7 @@ const glowOf = (o, P) => o.fx?.glow ? (o.fx.glowColor === 'accent' || !o.fx.glow
 // Éléments qui passent derrière la personne quand l'effet « texte en arrière-plan » est actif.
 export const DEPTH_BEHIND = new Set(['beat', 'countdown', 'kinetic', 'bigword', 'counter', 'words']);
 // Éléments qui entrent en Slide & Blur, et ceux qui reçoivent le Glow.
-const SLIDE_IN = new Set(['statcard', 'checklist', 'progress', 'grid', 'lower', 'comment', 'name', 'prompt', 'colorcard', 'numbers']);
+const SLIDE_IN = new Set(['statcard', 'checklist', 'versus', 'progress', 'grid', 'lower', 'comment', 'name', 'prompt', 'colorcard', 'numbers']);
 const GLOWING = new Set(['beat', 'countdown', 'kinetic', 'bigword', 'counter', 'words', 'statcard', 'name']);
 
 export const TITLES = [
@@ -322,6 +322,11 @@ function drawCaptionsInner(ctx, W, H, t, o) {
 // o = { title, font, pal, hook, titleStart, titleDur, motions: [...], media: [{el, layout, start, dur, label, pos}],
 //       captions: {style, pos, chunks} | null }
 export function render(ctx, W, H, t, o) {
+  setFrame(o.frame || null);
+  try { renderFrame(ctx, W, H, t, o); } finally { setFrame(null); }
+}
+
+function renderFrame(ctx, W, H, t, o) {
   const P = PALETTES[o.pal], F = fontOf(o.font);
   const isOn = x => t >= x.start && t <= x.start + x.dur;
   const active = o.motions.filter(isOn);
