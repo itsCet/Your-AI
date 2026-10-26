@@ -1,0 +1,670 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Video Edit Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Archivo+Black&family=Bebas+Neue&family=DM+Serif+Display&family=Inter:wght@400;600;800&family=Space+Mono:wght@700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #111111; --panel: #1b1b1b; --card: #222222; --line: #333333;
+    --text: #f2f2f2; --muted: #9a9a9a; --yellow: #ffd60a; --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 Inter, system-ui, sans-serif; }
+  button, input, textarea { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  header { display: flex; align-items: center; gap: 16px; padding: 12px 20px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--bg); z-index: 5; }
+  header h1 { font-size: 15px; margin: 0; font-weight: 800; letter-spacing: .02em; }
+  .dots { display: flex; gap: 6px; margin-left: auto; }
+  .dot { width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--line); background: none; font-size: 12px; color: var(--muted); }
+  .dot.on { background: var(--text); color: #000; border-color: var(--text); }
+  .dot.done { border-color: var(--yellow); color: var(--yellow); }
+  main { display: grid; grid-template-columns: 340px 1fr; gap: 24px; padding: 20px; max-width: 1500px; margin: 0 auto; }
+  .stage { position: sticky; top: 72px; align-self: start; }
+  .stage canvas { width: 100%; aspect-ratio: 9/16; border-radius: var(--radius); background: #000; display: block; }
+  .transport { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+  .transport button { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; }
+  .transport .play { color: var(--yellow); font-weight: 600; }
+  .transport .time { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .filename { color: var(--muted); font-size: 12px; margin-top: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .step-head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+  .step-head p { margin: 0; color: var(--text); }
+  .step-head b { font-weight: 600; }
+  .nav { margin-left: auto; display: flex; gap: 8px; }
+  .btn { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 16px; }
+  .btn.primary { background: var(--text); color: #000; border-color: var(--text); font-weight: 600; }
+  .btn:disabled { opacity: .4; cursor: default; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 14px; }
+  .card { background: var(--panel); border: 2px solid transparent; border-radius: var(--radius); padding: 10px; position: relative; transition: border-color .15s; }
+  .card canvas { width: 100%; aspect-ratio: 9/16; border-radius: 10px; display: block; background: #000; }
+  .card .num { position: absolute; top: 16px; left: 18px; font-size: 12px; color: #fff; text-shadow: 0 1px 3px #000; z-index: 1; }
+  .card h3 { margin: 10px 2px 2px; font-size: 14px; }
+  .card p { margin: 0 2px 10px; color: var(--muted); font-size: 12px; }
+  .card .row { display: flex; gap: 6px; }
+  .card .row button { flex: 1; background: transparent; border: 1px solid var(--line); border-radius: 8px; padding: 6px 4px; font-size: 12px; }
+  .card.sel { border-color: var(--text); }
+  .card.taken { border-color: var(--yellow); }
+  .card.taken .take { color: var(--yellow); border-color: var(--yellow); }
+  .card.clickable { cursor: pointer; }
+  .drop { border: 2px dashed var(--line); border-radius: var(--radius); padding: 60px 20px; text-align: center; color: var(--muted); }
+  .drop.over { border-color: var(--yellow); color: var(--text); }
+  .drop strong { display: block; color: var(--text); font-size: 18px; margin-bottom: 6px; }
+  .field { display: block; margin-bottom: 14px; max-width: 520px; }
+  .field span { display: block; color: var(--muted); font-size: 12px; margin-bottom: 4px; }
+  .field input { width: 100%; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 18px; }
+  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 400; font-size: 12px; }
+  td input { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; width: 100%; }
+  td input[type=number] { width: 80px; }
+  td button { background: none; border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; font-size: 12px; white-space: nowrap; }
+  .progress { height: 6px; background: var(--panel); border-radius: 3px; overflow: hidden; margin: 12px 0; }
+  .progress div { height: 100%; width: 0; background: var(--yellow); transition: width .2s; }
+  .muted { color: var(--muted); }
+  .swatches { display: flex; gap: 4px; margin: 8px 2px 0; }
+  .swatches i { width: 18px; height: 18px; border-radius: 50%; border: 1px solid #444; }
+  @media (max-width: 860px) {
+    main { grid-template-columns: 1fr; padding: 16px; }
+    .stage { position: static; max-width: 300px; margin: 0 auto; }
+    header { flex-wrap: wrap; }
+    .step-head { flex-wrap: wrap; }
+    .grid { grid-template-columns: repeat(2, 1fr); }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Video Edit Studio</h1>
+  <div class="dots" id="dots"></div>
+</header>
+<main>
+  <section class="stage">
+    <canvas id="main" width="540" height="960"></canvas>
+    <div class="transport">
+      <button id="back5">−5s</button>
+      <button id="play" class="play">Pause</button>
+      <button id="fwd5">+5s</button>
+      <span class="time" id="time">0:00 / 0:00</span>
+    </div>
+    <div class="filename" id="filename">Aucune vidéo</div>
+  </section>
+  <section>
+    <div class="step-head">
+      <p id="stepText"></p>
+      <div class="nav">
+        <button class="btn" id="prev">Retour</button>
+        <button class="btn primary" id="next">Suivant</button>
+      </div>
+    </div>
+    <div id="content"></div>
+  </section>
+</main>
+<video id="video" playsinline muted loop crossorigin="anonymous" style="display:none"></video>
+<input type="file" id="file" accept="video/*" hidden>
+
+<script>
+// ---------- Données ----------
+const STEPS = [
+  ['Importe ta vidéo.', 'Glisse un fichier (vertical idéalement). Rien ne quitte ton ordinateur.'],
+  ['Ton hook.', 'Les deux lignes affichées pendant les premières secondes.'],
+  ['Choisis la police.', 'Chaque aperçu est dessiné en direct sur ta vidéo.'],
+  ['Choisis tes couleurs.', 'La couleur d\'accent sert aux titres, cartes et motions.'],
+  ['Choisis le style de titre.', 'Dessiné en direct dans tes couleurs et ta police.'],
+  ['Coche les motions que tu veux.', 'Elles sont dessinées en direct dans tes couleurs et ta police.'],
+  ['Timing & export.', 'Place chaque motion sur la timeline, puis exporte.'],
+];
+
+const FONTS = [
+  { name: 'Anton', family: 'Anton', weight: 400 },
+  { name: 'Bebas Neue', family: 'Bebas Neue', weight: 400 },
+  { name: 'Archivo Black', family: 'Archivo Black', weight: 400 },
+  { name: 'DM Serif Display', family: 'DM Serif Display', weight: 400 },
+  { name: 'Space Mono', family: 'Space Mono', weight: 700 },
+  { name: 'Inter Extra Bold', family: 'Inter', weight: 800 },
+];
+
+const PALETTES = [
+  { name: 'Sunshine', accent: '#FFD60A', text: '#FFFFFF', ink: '#111111' },
+  { name: 'Signal', accent: '#FF3B30', text: '#FFFFFF', ink: '#111111' },
+  { name: 'Electric', accent: '#2F6BFF', text: '#FFFFFF', ink: '#0B0B0B' },
+  { name: 'Mint', accent: '#3DDC97', text: '#FFFFFF', ink: '#0E1B14' },
+  { name: 'Bubblegum', accent: '#FF4FA3', text: '#FFFFFF', ink: '#1A0710' },
+  { name: 'Mono', accent: '#FFFFFF', text: '#FFFFFF', ink: '#000000' },
+];
+
+const TITLES = [
+  { id: 'tiles', name: 'Tuiles', desc: 'Lettres en tuiles qui tombent' },
+  { id: 'stack', name: 'Empilé', desc: 'Gros texte, 2e ligne en accent' },
+  { id: 'banner', name: 'Bandeau', desc: 'Bandes de couleur qui balaient' },
+  { id: 'type', name: 'Machine à écrire', desc: 'Le texte se tape lettre par lettre' },
+];
+
+const MOTIONS = [
+  { id: 'orbit', name: 'Orbit', desc: 'Des photos tournent autour de toi', dur: 3 },
+  { id: 'carousel', name: 'Carousel', desc: 'Des cartes défilent en ligne', dur: 3 },
+  { id: 'shrink', name: 'Shrink card', desc: 'La vidéo rétrécit sur une carte couleur', dur: 3, text: 'True dreams' },
+  { id: 'comment', name: 'Comment pop-up', desc: 'Une bulle de commentaire apparaît', dur: 2.6, text: 'Love this, tell me more!' },
+  { id: 'counter', name: 'Compteur', desc: 'Un chiffre qui monte', dur: 2.4, text: '10000 vues' },
+  { id: 'words', name: 'Word pop', desc: 'Les mots claquent un par un', dur: 2.4, text: 'Film once post all week' },
+  { id: 'zoom', name: 'Punch-in', desc: 'Zoom rapide sur ton visage', dur: 1.6 },
+  { id: 'lower', name: 'Lower third', desc: 'Bandeau nom qui glisse', dur: 3, text: 'Ton Nom · Créateur' },
+];
+const M = Object.fromEntries(MOTIONS.map(m => [m.id, m]));
+
+const S = {
+  step: 0, hook: { l1: 'Quit', l2: 'your job?' }, font: 'Anton', pal: 0, title: 'tiles', titleDur: 3.2,
+  cards: MOTIONS.map(m => ({ type: m.id, variant: 0 })), taken: [], uid: 1, server: { ffmpeg: false }, exporting: false,
+};
+
+// ---------- Utilitaires ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const ease = p => 1 - Math.pow(1 - clamp(p), 3);
+const backOut = p => { p = clamp(p); const c = 1.7; return 1 + (c + 1) * Math.pow(p - 1, 3) + c * Math.pow(p - 1, 2); };
+const env = (p, a = .15, b = .15) => Math.min(ease(p / a), ease((1 - p) / b));
+const fmt = s => isFinite(s) ? `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}` : '0:00';
+const $ = id => document.getElementById(id);
+const fontOf = name => FONTS.find(f => f.name === name) || FONTS[0];
+const fstr = (F, size) => `${F.weight} ${Math.round(size)}px "${F.family}"`;
+const video = $('video');
+
+function fitSize(ctx, text, F, maxW, size) {
+  ctx.font = fstr(F, size);
+  const w = ctx.measureText(text).width;
+  return w > maxW ? size * maxW / w : size;
+}
+function wrap(ctx, text, maxW) {
+  const lines = []; let cur = '';
+  for (const w of text.split(/\s+/)) {
+    const t = cur ? cur + ' ' + w : w;
+    if (ctx.measureText(t).width > maxW && cur) { lines.push(cur); cur = w; } else cur = t;
+  }
+  if (cur) lines.push(cur);
+  return lines;
+}
+
+// Dessine la vidéo en "cover" dans un rectangle (avec zoom et coins arrondis optionnels)
+function drawVideoRect(ctx, x, y, w, h, r = 0, zoom = 1, cropY = .5) {
+  ctx.save();
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, r); ctx.clip();
+  if (video.readyState >= 2 && video.videoWidth) {
+    const vw = video.videoWidth, vh = video.videoHeight;
+    const k = Math.max(w / vw, h / vh) * zoom;
+    const dw = vw * k, dh = vh * k;
+    ctx.drawImage(video, x + (w - dw) / 2, y + (h - dh) * cropY, dw, dh);
+  } else {
+    const g = ctx.createLinearGradient(x, y, x + w, y + h);
+    g.addColorStop(0, '#3a3530'); g.addColorStop(1, '#14161c');
+    ctx.fillStyle = g; ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = 'rgba(255,255,255,.08)';
+    ctx.beginPath(); ctx.arc(x + w / 2, y + h * .42, w * .17, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(x + w / 2, y + h * .82, w * .36, h * .2, 0, 0, 7); ctx.fill();
+  }
+  ctx.restore();
+}
+
+// ---------- Titres ----------
+function drawTitle(ctx, W, H, p, o) {
+  const F = fontOf(o.font), P = PALETTES[o.pal];
+  const l1 = o.hook.l1 || '', l2 = o.hook.l2 || '';
+  const out = ease((1 - p) / .1);
+  ctx.save();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.shadowColor = 'rgba(0,0,0,.45)'; ctx.shadowBlur = W * .02;
+
+  if (o.title === 'tiles') {
+    const letters = [...l1.toUpperCase()].filter(c => c !== ' ');
+    const n = Math.max(1, letters.length);
+    const size = Math.min(W * .8 / n, W * .17), gap = size * .08;
+    const x0 = (W - (n * size + (n - 1) * gap)) / 2, y0 = H * .1;
+    letters.forEach((ch, i) => {
+      const lp = backOut((p - i * .035) / .12);
+      if (lp <= 0) return;
+      ctx.save();
+      ctx.globalAlpha = clamp(lp) * out;
+      ctx.translate(x0 + i * (size + gap) + size / 2, y0 + size / 2 - (1 - lp) * size * 1.2);
+      ctx.rotate((i % 2 ? 1 : -1) * .06);
+      ctx.fillStyle = i % 2 ? P.accent : P.text;
+      ctx.beginPath(); ctx.roundRect(-size / 2, -size / 2, size, size, size * .08); ctx.fill();
+      ctx.shadowBlur = 0; ctx.fillStyle = P.ink;
+      ctx.font = fstr(F, size * .72); ctx.fillText(ch, 0, size * .04);
+      ctx.restore();
+    });
+    if (l2) {
+      const lp = ease((p - .25) / .15);
+      const fs = fitSize(ctx, l2, F, W * .6, size * .42);
+      ctx.font = fstr(F, fs);
+      const tw = ctx.measureText(l2).width + fs * 1.2, th = fs * 1.6;
+      ctx.globalAlpha = lp * out;
+      const y = y0 + size * 1.35 + (1 - lp) * fs;
+      ctx.fillStyle = P.text; ctx.beginPath(); ctx.roundRect(W / 2 - tw / 2, y - th / 2, tw, th, fs * .2); ctx.fill();
+      ctx.shadowBlur = 0; ctx.fillStyle = P.ink; ctx.fillText(l2, W / 2, y + fs * .05);
+    }
+  } else if (o.title === 'stack') {
+    const s1 = fitSize(ctx, l1.toUpperCase(), F, W * .86, W * .2);
+    const sc = backOut(p / .14);
+    ctx.globalAlpha = clamp(p / .06) * out;
+    ctx.save(); ctx.translate(W / 2, H * .14); ctx.scale(sc, sc);
+    ctx.font = fstr(F, s1); ctx.fillStyle = P.text; ctx.fillText(l1.toUpperCase(), 0, 0);
+    ctx.restore();
+    const lp = backOut((p - .12) / .14);
+    const s2 = fitSize(ctx, l2.toUpperCase(), F, W * .8, s1 * .7);
+    ctx.globalAlpha = clamp((p - .12) / .06) * out;
+    ctx.save(); ctx.translate(W / 2, H * .14 + s1 * .55 + s2 * .6); ctx.scale(lp, lp);
+    ctx.font = fstr(F, s2); ctx.fillStyle = P.accent; ctx.fillText(l2.toUpperCase(), 0, 0);
+    ctx.restore();
+  } else if (o.title === 'banner') {
+    [l1, l2].forEach((txt, i) => {
+      if (!txt) return;
+      const fs = fitSize(ctx, txt.toUpperCase(), F, W * .74, W * .12);
+      ctx.font = fstr(F, fs);
+      const tw = ctx.measureText(txt.toUpperCase()).width + fs * .8, th = fs * 1.35;
+      const y = H * .12 + i * th * 1.15;
+      const wp = ease((p - i * .1) / .16);
+      const x = W / 2 - tw / 2;
+      ctx.globalAlpha = out;
+      ctx.fillStyle = i ? P.text : P.accent;
+      ctx.fillRect(x, y - th / 2, tw * wp, th);
+      ctx.save(); ctx.beginPath(); ctx.rect(x, y - th / 2, tw * wp, th); ctx.clip();
+      ctx.shadowBlur = 0; ctx.fillStyle = P.ink; ctx.fillText(txt.toUpperCase(), W / 2, y + fs * .05);
+      ctx.restore();
+    });
+  } else if (o.title === 'type') {
+    const full = l1 + '\n' + l2;
+    const n = Math.floor(full.length * clamp(p / .45));
+    const shown = full.slice(0, n).split('\n');
+    const fs = Math.min(fitSize(ctx, l1, F, W * .84, W * .13), fitSize(ctx, l2 || ' ', F, W * .84, W * .13));
+    ctx.font = fstr(F, fs); ctx.globalAlpha = out;
+    ctx.lineWidth = fs * .12; ctx.strokeStyle = P.ink; ctx.lineJoin = 'round';
+    shown.forEach((line, i) => {
+      const y = H * .13 + i * fs * 1.15;
+      ctx.fillStyle = i ? P.accent : P.text;
+      ctx.strokeText(line, W / 2, y); ctx.fillText(line, W / 2, y);
+      if (i === shown.length - 1 && Math.floor(p * 12) % 2 === 0) {
+        const w = ctx.measureText(line).width;
+        ctx.fillStyle = P.accent; ctx.fillRect(W / 2 + w / 2 + fs * .08, y - fs * .45, fs * .08, fs * .9);
+      }
+    });
+  }
+  ctx.restore();
+}
+
+// ---------- Motions ----------
+function card(ctx, cx, cy, w, h, rot, color, photo) {
+  ctx.save();
+  ctx.translate(cx, cy); ctx.rotate(rot);
+  ctx.shadowColor = 'rgba(0,0,0,.35)'; ctx.shadowBlur = w * .15; ctx.shadowOffsetY = w * .05;
+  ctx.fillStyle = color; ctx.beginPath(); ctx.roundRect(-w / 2, -h / 2, w, h, w * .07); ctx.fill();
+  ctx.shadowColor = 'transparent';
+  if (photo) { const pad = w * .08; drawVideoRect(ctx, -w / 2 + pad, -h / 2 + pad, w - pad * 2, h - pad * 3.2, w * .04, 1.8, .3); }
+  ctx.restore();
+}
+
+function drawMotion(ctx, W, H, m, lt, o) {
+  const F = fontOf(o.font), P = PALETTES[o.pal];
+  const p = lt / m.dur, v = m.variant || 0;
+  const [c1, c2] = v % 2 ? [P.accent, P.text] : [P.text, P.accent];
+  const dir = v % 3 === 2 ? -1 : 1;
+  const text = m.text ?? M[m.type].text ?? '';
+  ctx.save();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+
+  if (m.type === 'orbit') {
+    const e = env(p, .15, .15), N = 6;
+    const items = [...Array(N)].map((_, i) => { const th = i / N * Math.PI * 2 + dir * lt * 1.8; return { i, th, z: Math.sin(th) }; })
+      .sort((a, b) => a.z - b.z);
+    for (const it of items) {
+      const d = (it.z + 1) / 2, s = .7 + .3 * d, w = W * .17 * s;
+      ctx.globalAlpha = e * (.5 + .5 * d);
+      card(ctx, W / 2 + Math.cos(it.th) * W * .38 * e, H * .6 + it.z * H * .045, w, w * 1.25, Math.cos(it.th) * .15,
+        it.i % 2 ? c2 : c1, it.i % 2 === 0);
+    }
+  } else if (m.type === 'carousel') {
+    const N = 7, w = W * .22, sp = w * 1.12;
+    const travel = W + N * sp;
+    for (let i = 0; i < N; i++) {
+      let x = W + w - ease(p * .95) * travel + i * sp;
+      if (dir < 0) x = W - x;
+      const near = Math.max(0, 1 - Math.abs(x - W / 2) / (W * .35));
+      const s = 1 + .18 * near;
+      ctx.globalAlpha = env(p, .05, .08);
+      card(ctx, x, H * .58, w * s, w * 1.3 * s, 0, i % 2 ? c2 : c1, i % 2 === 0);
+    }
+  } else if (m.type === 'comment') {
+    const inP = backOut(p / .14), outA = ease((1 - p) / .12);
+    const y = v % 2 ? H * .72 : H * .26, bw = W * .84;
+    const fs = W * .045;
+    ctx.font = fstr({ family: 'Inter', weight: 600 }, fs);
+    const lines = wrap(ctx, text, bw * .7).slice(0, 3);
+    const bh = fs * 2.6 + lines.length * fs * 1.3;
+    ctx.translate(W / 2, y); ctx.scale(inP, inP); ctx.globalAlpha = outA * clamp(p / .05);
+    ctx.shadowColor = 'rgba(0,0,0,.35)'; ctx.shadowBlur = W * .04;
+    ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.roundRect(-bw / 2, -bh / 2, bw, bh, fs * .9); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(-bw * .3, bh / 2 - 1); ctx.lineTo(-bw * .36, bh / 2 + fs * 1.1); ctx.lineTo(-bw * .2, bh / 2 - 1); ctx.fill();
+    ctx.shadowColor = 'transparent';
+    const ax = -bw / 2 + fs * 1.9;
+    ctx.fillStyle = P.accent === '#FFFFFF' ? '#111' : P.accent; ctx.beginPath(); ctx.arc(ax, -bh / 2 + fs * 1.7, fs * 1.05, 0, 7); ctx.fill();
+    ctx.textAlign = 'left'; ctx.fillStyle = '#888';
+    ctx.font = fstr({ family: 'Inter', weight: 600 }, fs * .8); ctx.fillText('@viewer', ax + fs * 1.6, -bh / 2 + fs * 1.4);
+    ctx.fillStyle = '#111'; ctx.font = fstr({ family: 'Inter', weight: 600 }, fs);
+    lines.forEach((l, i) => ctx.fillText(l, ax + fs * 1.6, -bh / 2 + fs * 2.7 + i * fs * 1.3));
+  } else if (m.type === 'counter') {
+    const target = parseInt((text.match(/\d+/) || ['10000'])[0], 10);
+    const val = Math.round(target * ease(p / .7)).toLocaleString('fr-FR').replace(/ | /g, ' ');
+    const str = /\d/.test(text) ? text.replace(/\d+/, val) : val;
+    const fs = fitSize(ctx, str, F, W * .86, W * .2);
+    ctx.globalAlpha = env(p, .08, .12);
+    const sc = backOut(p / .12);
+    ctx.translate(W / 2, H * .7); ctx.scale(sc, sc);
+    ctx.font = fstr(F, fs);
+    const tw = ctx.measureText(str).width;
+    ctx.fillStyle = P.accent; ctx.fillRect(-tw / 2, fs * .38, tw * ease(p / .7), fs * .1);
+    ctx.shadowColor = 'rgba(0,0,0,.5)'; ctx.shadowBlur = W * .03;
+    ctx.fillStyle = c1; ctx.fillText(str, 0, 0);
+  } else if (m.type === 'words') {
+    const words = text.split(/\s+/).filter(Boolean);
+    if (words.length) {
+      const idx = Math.min(words.length - 1, Math.floor(clamp(p) * words.length));
+      const wp = clamp(p) * words.length - idx;
+      const word = words[idx].toUpperCase();
+      const fs = fitSize(ctx, word, F, W * .78, W * .16);
+      ctx.font = fstr(F, fs);
+      const tw = ctx.measureText(word).width;
+      const sc = backOut(wp / .3);
+      ctx.translate(W / 2, H * .68); ctx.scale(sc, sc);
+      if (v % 2 === 0) {
+        ctx.fillStyle = P.accent; ctx.beginPath(); ctx.roundRect(-tw / 2 - fs * .25, -fs * .65, tw + fs * .5, fs * 1.3, fs * .15); ctx.fill();
+        ctx.fillStyle = P.ink;
+      } else {
+        ctx.shadowColor = 'rgba(0,0,0,.6)'; ctx.shadowBlur = W * .03; ctx.fillStyle = P.accent;
+      }
+      ctx.fillText(word, 0, fs * .04);
+    }
+  } else if (m.type === 'lower') {
+    const [name, role] = text.split('·').map(s => s.trim());
+    const fs = W * .06, y = H * .8;
+    ctx.textAlign = 'left';
+    ctx.font = fstr(F, fs); const nw = ctx.measureText(name || '').width;
+    ctx.font = fstr({ family: 'Inter', weight: 600 }, fs * .5); const rw = ctx.measureText(role || '').width;
+    const bw = Math.max(nw, rw) + fs * 1.4, bh = fs * (role ? 2.3 : 1.6);
+    const inX = ease(p / .2), outX = ease((1 - p) / .15);
+    const x = W * .06 - (1 - Math.min(inX, outX)) * (bw + W * .1);
+    ctx.fillStyle = P.accent; ctx.fillRect(x, y - bh / 2, fs * .25, bh);
+    ctx.fillStyle = 'rgba(10,10,10,.85)'; ctx.fillRect(x + fs * .25, y - bh / 2, bw, bh);
+    ctx.fillStyle = P.text; ctx.font = fstr(F, fs); ctx.fillText(name || '', x + fs * .8, y - (role ? fs * .3 : 0));
+    if (role) { ctx.fillStyle = P.accent; ctx.font = fstr({ family: 'Inter', weight: 600 }, fs * .5); ctx.fillText(role, x + fs * .8, y + fs * .55); }
+  }
+  ctx.restore();
+}
+
+// ---------- Rendu d'une image complète ----------
+function render(ctx, W, H, t, o) {
+  const P = PALETTES[o.pal], F = fontOf(o.font);
+  const active = o.motions.filter(m => t >= m.start && t <= m.start + m.dur);
+  let zoom = 1, shrink = null;
+  for (const m of active) {
+    const p = (t - m.start) / m.dur;
+    if (m.type === 'zoom') zoom *= 1 + .25 * env(p, .15, .25);
+    if (m.type === 'shrink') shrink = { m, e: env(p, .2, .18) };
+  }
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+  drawVideoRect(ctx, 0, 0, W, H, 0, zoom);
+
+  if (shrink) {
+    const { m, e } = shrink, P2 = (m.variant || 0) % 2 ? P.text : P.accent;
+    ctx.fillStyle = P.ink; ctx.globalAlpha = e * .9; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1;
+    const s = 1 - .4 * e, vw = W * s, vh = H * s, vx = (W - vw) / 2, vy = (H - vh) / 2 + H * .06 * e;
+    const pad = W * .035 * e, head = H * .1 * e;
+    ctx.fillStyle = P2;
+    ctx.beginPath(); ctx.roundRect(vx - pad, vy - head - pad, vw + pad * 2, vh + head + pad * 2, W * .04 * e); ctx.fill();
+    drawVideoRect(ctx, vx, vy, vw, vh, W * .025 * e, zoom);
+    const text = m.text ?? M.shrink.text;
+    if (text && e > .05) {
+      ctx.save(); ctx.globalAlpha = clamp((e - .5) * 2);
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = P.ink;
+      ctx.font = fstr(F, fitSize(ctx, text, F, vw * .9, head * .6));
+      ctx.fillText(text, W / 2, vy - head / 2 - pad / 2); ctx.restore();
+    }
+  }
+  if (o.title && t >= o.titleStart && t <= o.titleStart + o.titleDur) drawTitle(ctx, W, H, (t - o.titleStart) / o.titleDur, o);
+  for (const m of active) if (m.type !== 'zoom' && m.type !== 'shrink') drawMotion(ctx, W, H, m, t - m.start, o);
+}
+
+const base = () => ({ title: S.title, font: S.font, pal: S.pal, hook: S.hook, motions: S.taken, titleStart: 0, titleDur: S.titleDur });
+
+// ---------- Boucle d'aperçu ----------
+let live = []; // { ctx, W, H, cfg: () => o, loop: secondes }
+const mainCtx = $('main').getContext('2d');
+
+function frame(now) {
+  const clock = now / 1000;
+  const mc = $('main');
+  if (S.step >= 1 && S.step <= 4) {
+    const t = clock % (S.titleDur + .8);
+    render(mainCtx, mc.width, mc.height, t, { ...base(), motions: [] });
+  } else if (S.step === 0) {
+    render(mainCtx, mc.width, mc.height, 0, { ...base(), title: null, motions: [] });
+  } else {
+    render(mainCtx, mc.width, mc.height, video.currentTime || 0, base());
+  }
+  for (const l of live) render(l.ctx, l.W, l.H, clock % l.loop, l.cfg());
+  $('time').textContent = `${fmt(video.currentTime)} / ${fmt(video.duration)}`;
+  requestAnimationFrame(frame);
+}
+
+// ---------- UI ----------
+function liveCanvas(cfg, loop) {
+  const c = document.createElement('canvas');
+  c.width = 270; c.height = 480;
+  live.push({ ctx: c.getContext('2d'), W: c.width, H: c.height, cfg, loop });
+  return c;
+}
+
+function el(tag, attrs = {}, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k.startsWith('on')) e.addEventListener(k.slice(2), v); else if (k === 'class') e.className = v; else e.setAttribute(k, v);
+  }
+  for (const k of kids) if (k != null) e.append(k);
+  return e;
+}
+
+function choiceGrid(items, isSel, onPick, cfgFor, extra) {
+  const g = el('div', { class: 'grid' });
+  items.forEach((it, i) => {
+    g.append(el('div', { class: 'card clickable' + (isSel(it) ? ' sel' : ''), onclick: () => { onPick(it); draw(); } },
+      el('span', { class: 'num' }, String(i + 1)),
+      liveCanvas(() => cfgFor(it), S.titleDur + .8),
+      el('h3', {}, it.name), extra ? extra(it) : null));
+  });
+  return g;
+}
+
+function nextStart(dur) {
+  const end = S.taken.reduce((a, m) => Math.max(a, m.start + m.dur), S.titleDur);
+  const total = isFinite(video.duration) ? video.duration : 60;
+  return Math.max(0, Math.min(+(end + .4).toFixed(1), +(total - dur).toFixed(1)));
+}
+
+function draw() {
+  live = [];
+  $('dots').replaceChildren(...STEPS.map((_, i) =>
+    el('button', { class: 'dot' + (i === S.step ? ' on' : i < S.step ? ' done' : ''), onclick: () => { S.step = i; draw(); } }, String(i + 1))));
+  $('stepText').innerHTML = `<b>Étape ${S.step + 1} sur 7.</b> ${STEPS[S.step][0]} <span class="muted">${STEPS[S.step][1]}</span>`;
+  $('prev').disabled = S.step === 0;
+  $('next').style.display = S.step === 6 ? 'none' : '';
+  const C = $('content'); C.replaceChildren();
+
+  if (S.step === 0) {
+    const d = el('div', { class: 'drop', onclick: () => $('file').click() },
+      el('strong', {}, video.src ? 'Vidéo chargée — clique pour en changer' : 'Dépose ta vidéo ici'),
+      'ou clique pour choisir un fichier (.mp4, .mov, .webm)');
+    d.addEventListener('dragover', e => { e.preventDefault(); d.classList.add('over'); });
+    d.addEventListener('dragleave', () => d.classList.remove('over'));
+    d.addEventListener('drop', e => { e.preventDefault(); d.classList.remove('over'); if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]); });
+    C.append(d);
+  } else if (S.step === 1) {
+    const f = (label, key) => el('label', { class: 'field' }, el('span', {}, label),
+      Object.assign(el('input', { value: S.hook[key], oninput: e => { S.hook[key] = e.target.value; } })));
+    C.append(f('Ligne 1', 'l1'), f('Ligne 2', 'l2'),
+      el('label', { class: 'field' }, el('span', {}, 'Durée du titre (secondes)'),
+        el('input', { type: 'number', min: '1', max: '10', step: '0.1', value: S.titleDur, oninput: e => { S.titleDur = clamp(+e.target.value || 3.2, 1, 10); } })));
+  } else if (S.step === 2) {
+    C.append(choiceGrid(FONTS, f => f.name === S.font, f => S.font = f.name, f => ({ ...base(), font: f.name, motions: [] })));
+  } else if (S.step === 3) {
+    C.append(choiceGrid(PALETTES.map((p, i) => ({ ...p, i })), p => p.i === S.pal, p => S.pal = p.i, p => ({ ...base(), pal: p.i, motions: [] }),
+      p => el('div', { class: 'swatches' }, ...[p.accent, p.text, p.ink].map(c => { const s = el('i'); s.style.background = c; return s; }))));
+  } else if (S.step === 4) {
+    C.append(choiceGrid(TITLES, t => t.id === S.title, t => S.title = t.id, t => ({ ...base(), title: t.id, motions: [] }),
+      t => el('p', {}, t.desc)));
+  } else if (S.step === 5) {
+    const g = el('div', { class: 'grid' });
+    S.cards.forEach((c, i) => {
+      const def = M[c.type];
+      const taken = S.taken.find(m => m.type === c.type && m.variant === c.variant);
+      const mot = { type: c.type, variant: c.variant, start: .3, dur: def.dur, text: def.text };
+      g.append(el('div', { class: 'card' + (taken ? ' taken' : '') },
+        el('span', { class: 'num' }, String(i + 1)),
+        liveCanvas(() => ({ ...base(), title: null, motions: [mot] }), def.dur + .8),
+        el('h3', {}, def.name + (c.variant ? ` · v${c.variant + 1}` : '')),
+        el('p', {}, def.desc),
+        el('div', { class: 'row' },
+          el('button', { class: 'take', onclick: () => {
+            if (taken) S.taken = S.taken.filter(m => m !== taken);
+            else S.taken.push({ uid: S.uid++, type: c.type, variant: c.variant, start: nextStart(def.dur), dur: def.dur, text: def.text });
+            draw();
+          } }, taken ? 'Pris ✓' : 'Prendre'),
+          el('button', { onclick: () => {
+            const v = Math.max(...S.cards.filter(x => x.type === c.type).map(x => x.variant)) + 1;
+            S.cards.splice(i + 1, 0, { type: c.type, variant: v }); draw();
+          } }, 'Plus comme ça'))));
+    });
+    C.append(g);
+  } else if (S.step === 6) {
+    drawTiming(C);
+  }
+}
+
+function drawTiming(C) {
+  const rows = [...S.taken].sort((a, b) => a.start - b.start);
+  const num = (m, key) => el('input', { type: 'number', step: '0.1', min: key === 'dur' ? '0.3' : '0', value: m[key],
+    oninput: e => { const v = parseFloat(e.target.value); if (isFinite(v)) m[key] = Math.max(key === 'dur' ? .3 : 0, v); } });
+  const table = el('table', {},
+    el('tr', {}, ...['Motion', 'Début (s)', 'Durée (s)', 'Texte', '', ''].map(h => el('th', {}, h))),
+    el('tr', {}, el('td', {}, 'Titre (hook)'), el('td', {}, '0'), el('td', {}, String(S.titleDur)), el('td', {}, `${S.hook.l1} / ${S.hook.l2}`), el('td'), el('td')),
+    ...rows.map(m => el('tr', {},
+      el('td', {}, M[m.type].name + (m.variant ? ` v${m.variant + 1}` : '')),
+      el('td', {}, num(m, 'start')),
+      el('td', {}, num(m, 'dur')),
+      el('td', {}, m.text != null ? el('input', { value: m.text, oninput: e => { m.text = e.target.value; } }) : el('span', { class: 'muted' }, '—')),
+      el('td', {}, el('button', { onclick: () => { m.start = +video.currentTime.toFixed(1); draw(); } }, '⇤ Tête de lecture')),
+      el('td', {}, el('button', { onclick: () => { S.taken = S.taken.filter(x => x !== m); draw(); } }, '✕')))));
+  if (!rows.length) C.append(el('p', { class: 'muted' }, 'Aucune motion choisie — retourne à l\'étape 6 pour en prendre.'));
+  C.append(table);
+  const bar = el('div', { class: 'progress' }, el('div', { id: 'bar' }));
+  const status = el('p', { class: 'muted', id: 'status' },
+    S.server.ffmpeg ? 'ffmpeg détecté : l\'export sera converti en MP4.' : 'Lance « python3 serve.py » avec ffmpeg installé pour obtenir un MP4 (sinon export WebM).');
+  C.append(el('button', { class: 'btn primary', id: 'exportBtn', onclick: exportVideo }, 'Exporter la vidéo'), bar, status,
+    el('p', { class: 'muted' }, 'L\'export se fait en temps réel : la vidéo est rejouée du début et capturée. Garde l\'onglet au premier plan.'));
+}
+
+// ---------- Vidéo ----------
+function loadFile(file) {
+  video.src = URL.createObjectURL(file);
+  $('filename').textContent = file.name;
+  video.play().catch(() => {});
+  draw();
+}
+$('file').addEventListener('change', e => e.target.files[0] && loadFile(e.target.files[0]));
+$('play').onclick = () => { video.paused ? video.play() : video.pause(); };
+video.addEventListener('play', () => $('play').textContent = 'Pause');
+video.addEventListener('pause', () => $('play').textContent = 'Lecture');
+$('back5').onclick = () => { video.currentTime = Math.max(0, video.currentTime - 5); };
+$('fwd5').onclick = () => { video.currentTime = Math.min(video.duration || 0, video.currentTime + 5); };
+$('prev').onclick = () => { S.step = Math.max(0, S.step - 1); draw(); };
+$('next').onclick = () => { S.step = Math.min(6, S.step + 1); draw(); };
+
+// ---------- Export ----------
+let audio = null;
+function ensureAudio() {
+  if (audio) return audio;
+  const ac = new AudioContext();
+  const src = ac.createMediaElementSource(video);
+  const dest = ac.createMediaStreamDestination();
+  src.connect(dest); src.connect(ac.destination);
+  return audio = { ac, dest };
+}
+
+async function exportVideo() {
+  if (S.exporting) return;
+  if (!video.src) { alert('Importe d\'abord une vidéo (étape 1).'); return; }
+  S.exporting = true;
+  const btn = $('exportBtn'), bar = $('bar'), status = $('status');
+  btn.disabled = true;
+  try {
+    await document.fonts.ready;
+    let W = video.videoWidth, H = video.videoHeight;
+    const k = 1920 / Math.max(W, H);
+    if (k < 1) { W = Math.round(W * k / 2) * 2; H = Math.round(H * k / 2) * 2; }
+    const c = document.createElement('canvas'); c.width = W; c.height = H;
+    const ctx = c.getContext('2d');
+    const stream = c.captureStream(30);
+    const { ac, dest } = ensureAudio();
+    await ac.resume();
+    dest.stream.getAudioTracks().forEach(t => stream.addTrack(t));
+    const mime = ['video/mp4;codecs=avc1,mp4a', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4']
+      .find(m => MediaRecorder.isTypeSupported(m));
+    const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 12e6 });
+    const chunks = [];
+    rec.ondataavailable = e => e.data.size && chunks.push(e.data);
+    const stopped = new Promise(r => rec.onstop = r);
+
+    video.pause(); video.loop = false; video.muted = false;
+    video.currentTime = 0;
+    await new Promise(r => video.addEventListener('seeked', r, { once: true }));
+    const cfg = base();
+    render(ctx, W, H, 0, cfg);
+    let done = false;
+    const tick = () => {
+      if (done) return;
+      render(ctx, W, H, video.currentTime, cfg);
+      bar.style.width = (100 * video.currentTime / video.duration) + '%';
+      status.textContent = `Enregistrement… ${fmt(video.currentTime)} / ${fmt(video.duration)}`;
+      requestAnimationFrame(tick);
+    };
+    rec.start(250);
+    await video.play();
+    tick();
+    await new Promise(r => video.addEventListener('ended', r, { once: true }));
+    done = true;
+    render(ctx, W, H, video.duration, cfg);
+    rec.stop(); await stopped;
+
+    let blob = new Blob(chunks, { type: mime.split(';')[0] });
+    let ext = mime.startsWith('video/mp4') ? 'mp4' : 'webm';
+    if (!mime.includes('avc1') && S.server.ffmpeg) {
+      status.textContent = 'Conversion en MP4 avec ffmpeg…';
+      const r = await fetch('/convert', { method: 'POST', body: blob });
+      if (r.ok) { blob = await r.blob(); ext = 'mp4'; } else status.textContent = 'Conversion échouée, export WebM : ' + (await r.text()).slice(0, 200);
+    }
+    const name = ($('filename').textContent.replace(/\.[^.]+$/, '') || 'video') + '-edit.' + ext;
+    const a = el('a', { href: URL.createObjectURL(blob), download: name }); a.click();
+    bar.style.width = '100%';
+    status.textContent = `Terminé : ${name} (${(blob.size / 1e6).toFixed(1)} Mo).`;
+  } catch (err) {
+    status.textContent = 'Erreur pendant l\'export : ' + err.message;
+  } finally {
+    video.muted = true; video.loop = true; video.play().catch(() => {});
+    btn.disabled = false; S.exporting = false;
+  }
+}
+
+fetch('/health').then(r => r.ok ? r.json() : null).then(j => { if (j) { S.server = j; if (S.step === 6) draw(); } }).catch(() => {});
+document.fonts.ready.then(() => Promise.all(FONTS.map(f => document.fonts.load(fstr(f, 40))))).catch(() => {});
+draw();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
