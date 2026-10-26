@@ -33,8 +33,12 @@ export const UI_BOLD = { family: 'Inter', weight: 800 };
 export const HAND = { family: 'Caveat', weight: 700 };
 
 export const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+// Courbes d'animation (jamais de mouvement linéaire) :
+// ease = Ease-Out cubique (freinage fluide pour les entrées),
+// easeInOut = démarrage et fin doux, backOut = « elastic pop » qui dépasse légèrement puis se pose.
 export const ease = p => 1 - Math.pow(1 - clamp(p), 3);
-export const backOut = p => { p = clamp(p); const c = 1.7; return 1 + (c + 1) * Math.pow(p - 1, 3) + c * Math.pow(p - 1, 2); };
+export const easeInOut = p => { p = clamp(p); return 3 * p * p - 2 * p * p * p; };
+export const backOut = p => { p = clamp(p); return 1 + 2.70158 * Math.pow(p - 1, 3) + 1.70158 * Math.pow(p - 1, 2); };
 export const env = (p, a = .15, b = .15) => Math.min(ease(p / a), ease((1 - p) / b));
 export const fontOf = name => FONTS.find(f => f.name === name) || FONTS[0];
 export const fstr = (F, size) => `${F.style || 'normal'} ${F.weight} ${Math.round(size)}px "${F.family}"`;
@@ -162,4 +166,44 @@ export function mix(a, b, k) {
   const pa = parseInt(a.slice(1), 16), pb = parseInt(b.slice(1), 16);
   const ch = s => Math.round(((pa >> s) & 255) * (1 - k) + ((pb >> s) & 255) * k);
   return `rgb(${ch(16)},${ch(8)},${ch(0)})`;
+}
+
+// ---------- Motion design (effets de thème) ----------
+// fx = { pop, slide, glow, glowColor } : réglages du thème, voir FX_PRESETS dans render.js.
+
+// Kinetic Text Pop : le mot grossit d'un coup quand il est prononcé (elastic pop),
+// puis reprend sa taille (ease-in-out). x = secondes depuis le début du mot.
+export function kineticPop(x, amp = .28) {
+  if (x < 0) return 1;
+  if (x < .12) return 1 + amp * backOut(x / .12);
+  return 1 + amp * (1 - easeInOut((x - .12) / .3));
+}
+
+// Slide & Blur : entrée par le bas (position en Ease-Out) avec un flou de mouvement
+// limité aux premières images. À appeler après ctx.save(). p = avancement 0..1 de l'élément.
+export function slideBlur(ctx, W, H, p, span = .22) {
+  const k = clamp(p / span);
+  if (k >= 1) return;
+  ctx.translate(0, (1 - ease(k)) * H * .09);
+  const blur = (1 - k) * W * .014;
+  if (blur > .3) ctx.filter = `blur(${blur.toFixed(1)}px)`;
+}
+
+// Glow (néon) : chaque texte dessiné pendant fn() reçoit d'abord une lueur floue de la
+// couleur choisie, puis le texte net par-dessus.
+export function withGlow(ctx, color, W, fn) {
+  if (!color) return fn();
+  const own = Object.prototype.hasOwnProperty.call(ctx, 'fillText');
+  const fill = CanvasRenderingContext2D.prototype.fillText;
+  ctx.fillText = function (t, x, y, mw) {
+    this.save();
+    this.fillStyle = color; this.shadowColor = color;
+    this.shadowBlur = W * .045; this.globalAlpha *= .85;
+    fill.call(this, t, x, y, mw);
+    this.shadowBlur = W * .018;
+    fill.call(this, t, x, y, mw);
+    this.restore();
+    fill.call(this, t, x, y, mw);
+  };
+  try { return fn(); } finally { if (!own) delete ctx.fillText; }
 }

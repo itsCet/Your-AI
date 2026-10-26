@@ -1,4 +1,5 @@
-import { FONTS, PALETTES, TITLES, CAPTION_STYLES, MOTIONS, CATEGORIES, M, render, setVideo, fstr, clamp } from './render.js';
+import { FONTS, PALETTES, TITLES, CAPTION_STYLES, MOTIONS, CATEGORIES, M, render, setVideo, fstr, clamp, GLOW_COLORS, DEFAULT_FX } from './render.js';
+import { depth, startMatting, resetMatting, updateDepth } from './depth.js';
 import { decodeAudio, loudness, findSilences, cutsFromSilences, findPeaks, transcribe, cancelTranscription, chunkWords, retextChunk } from './analyze.js';
 import { makeProposals } from './proposals.js';
 import { MEDIA_LAYOUTS, POSITIONS, interpretMedia, hasAlpha } from './media.js';
@@ -27,6 +28,7 @@ const S = {
   hook: { l1: 'Quit', l2: 'your job?' }, font: 'Anton', pal: 0, title: 'editorial', titleDur: 3,
   taken: [], captions: { on: true, style: 'editorial', pos: .74 }, cuts: { on: false, sens: .3, minLen: .5, segs: [] },
   media: [], mediaLayout: 'card', sfx: { on: true, vol: .6 },
+  fx: { ...DEFAULT_FX, pop: true, slide: true }, depthOn: false, depthEngine: 'auto', file: null,
   proposals: [], seed: 0, preview: -1, applied: '', notes: {},
   cards: MOTIONS.map(m => ({ type: m.id, variant: 0 })), cat: 'infos', review: {},
   uid: 1, server: { ffmpeg: false }, exporting: false,
@@ -71,10 +73,12 @@ function mediaCfg(defaultLayout = S.mediaLayout) {
 const base = () => ({
   title: S.title, font: S.font, pal: S.pal, hook: S.hook, titleStart: 0, titleDur: S.titleDur,
   motions: S.taken, media: mediaCfg(), captions: S.captions.on ? captionsCfg(S.captions.style) : null,
+  fx: S.fx, depth: S.depthOn && depth.ready ? depth.alpha : null,
 });
 const proposalCfg = p => ({
   title: p.title, font: p.font, pal: p.pal, hook: p.hook, titleStart: 0, titleDur: p.titleDur,
   motions: p.motions, media: mediaCfg(p.mediaLayout), captions: captionsCfg(p.captions),
+  fx: p.fx, depth: (p.depth || S.depthOn) && depth.ready ? depth.alpha : null,
 });
 // Configuration de l'aperçu principal / de l'export.
 const currentCfg = () => S.step === ST.proposals && S.proposals[S.preview] ? proposalCfg(S.proposals[S.preview]) : base();
@@ -103,6 +107,52 @@ function applyProposal(p) {
   S.taken = p.motions.map(m => ({ ...m, uid: S.uid++ }));
   S.captions.style = p.captions; S.captions.on = true;
   S.cuts.on = p.cuts && S.cuts.segs.length > 0;
+  S.fx = { ...DEFAULT_FX, ...p.fx };
+  if (p.depth) { S.depthOn = true; startDepth(); }
+}
+
+// ---------- Effet « texte en arrière-plan » (détourage calculé par serve.py / depth.py) ----------
+function startDepth() {
+  if (!S.file || !S.server.matting?.length) return;
+  startMatting(S.file, S.depthEngine, depthProgress);
+}
+function depthProgress() {
+  const bar = $('dbar'), msg = $('dmsg');
+  // Pas de redessin complet pendant un export (il effacerait sa barre de progression).
+  if (depth.status === 'done' || depth.status === 'error' || !bar) { if (!S.exporting) draw(); return; }
+  bar.style.width = (depth.total ? 100 * depth.done / depth.total : 2) + '%';
+  msg.textContent = depthText();
+}
+function depthText() {
+  if (depth.status === 'uploading') return 'Envoi de la vidéo au moteur de détourage…';
+  if (depth.status === 'running') return `Détourage en cours${depth.engine && depth.engine !== 'auto' ? ` (${depth.engine})` : ''} : image ${depth.done} / ${depth.total || '…'}${depth.log ? ` — ${depth.log}` : ''}`;
+  if (depth.status === 'done') return `Silhouette prête (${depth.engine}). Le texte passe maintenant derrière toi.`;
+  if (depth.status === 'error') return 'Détourage impossible : ' + depth.error;
+  return '';
+}
+
+// Panneau commun aux étapes de choix du thème : profondeur + motion design.
+function fxPanel(C) {
+  const engines = S.server.matting || [];
+  const busy = depth.status === 'uploading' || depth.status === 'running';
+  C.append(el('div', { class: 'panel fx' },
+    el('h2', {}, 'Effets du thème'),
+    el('div', { class: 'options' },
+      el('label', {}, el('input', { type: 'checkbox', checked: S.depthOn, disabled: !engines.length || null,
+        onchange: e => { S.depthOn = e.target.checked; if (S.depthOn) startDepth(); draw(); } }), el('b', {}, 'Effet Texte en Arrière-plan')),
+      engines.length ? el('label', {}, 'Moteur', select([['auto', 'Auto (rembg, mediapipe si trop lent)'], ...engines.map(e => [e, e])], S.depthEngine,
+        v => { S.depthEngine = v; if (S.depthOn) { resetMatting(); startDepth(); } draw(); }, { disabled: busy || null })) : null),
+    engines.length
+      ? el('p', { class: 'muted' }, 'Le titre « Géant derrière toi » et les gros mots (beat, compteur, word pop, phrase cinétique…) passent derrière ta silhouette.')
+      : el('p', { class: 'muted' }, 'Pour l\'activer : installe le détourage avec « pip install -r requirements.txt », puis relance « python3 serve.py ».'),
+    S.depthOn && depth.status !== 'idle' ? el('div', {},
+      el('div', { id: 'dmsg', class: depth.status === 'error' ? 'err' : depth.status === 'done' ? 'understood' : 'muted' }, depthText()),
+      busy ? el('div', { class: 'progress' }, el('div', { id: 'dbar', style: `width:${depth.total ? 100 * depth.done / depth.total : 2}%` })) : null) : null,
+    el('div', { class: 'options' },
+      el('label', {}, el('input', { type: 'checkbox', checked: S.fx.pop, onchange: e => { S.fx.pop = e.target.checked; } }), 'Kinetic Pop (le mot clé grossit quand tu le dis)'),
+      el('label', {}, el('input', { type: 'checkbox', checked: S.fx.slide, onchange: e => { S.fx.slide = e.target.checked; } }), 'Slide & Blur (entrées par le bas avec flou)'),
+      el('label', {}, el('input', { type: 'checkbox', checked: S.fx.glow, onchange: e => { S.fx.glow = e.target.checked; } }), 'Glow néon'),
+      el('label', {}, 'Lueur', select(GLOW_COLORS, S.fx.glowColor, v => { S.fx.glowColor = v; S.fx.glow = true; draw(); })))));
 }
 
 // ---------- Sons ----------
@@ -142,6 +192,7 @@ const mainCtx = $('main').getContext('2d');
 function frame(now) {
   const clock = now / 1000;
   const mc = $('main');
+  if (!S.exporting) updateDepth(video);
   // Saut des passages coupés pendant la lecture.
   if (!video.paused && !S.exporting) {
     const seg = activeCuts().find(([a, b]) => video.currentTime >= a && video.currentTime < b - .02);
@@ -354,6 +405,7 @@ function stepProposals(C) {
       ' · ', `${A.peaks.length} temps forts`, ' · ', `${S.media.length} média${S.media.length > 1 ? 's' : ''}`, ' · ',
       S.cuts.segs.length ? `${S.cuts.segs.length} blancs à couper (−${cutSaving(S.cuts.segs).toFixed(1)} s)` : 'aucun blanc à couper'),
     el('button', { class: 'btn', style: 'margin-left:auto', onclick: () => { S.seed++; regenerateProposals(); S.preview = 0; draw(); } }, '↻ Autres propositions')));
+  fxPanel(C);
   const g = el('div', { class: 'grid wide' });
   S.proposals.forEach((p, i) => {
     const P = PALETTES[p.pal];
@@ -370,6 +422,8 @@ function stepProposals(C) {
         A.chunks.length ? el('span', {}, 'Sous-titres ' + CAPTION_STYLES.find(c => c.id === p.captions).name.toLowerCase()) : null,
         S.media.length ? el('span', {}, 'Médias : ' + MEDIA_LAYOUTS.find(l => l.id === p.mediaLayout).name.toLowerCase()) : null,
         p.cuts && S.cuts.segs.length ? el('span', {}, `Coupes −${cutSaving(S.cuts.segs).toFixed(1)} s`) : el('span', {}, 'Sans coupes'),
+        p.depth ? el('span', { class: 'hot' }, 'Texte derrière toi') : null,
+        ...[['pop', 'Kinetic Pop'], ['slide', 'Slide & Blur'], ['glow', 'Glow']].filter(([k]) => p.fx[k]).map(([, n]) => el('span', {}, n)),
         ...names.map(n => el('span', {}, n))),
       el('textarea', { rows: '1', class: 'note', placeholder: 'Ta note (ce qui marche, ce qu\'il faut changer)', value: S.notes[p.name] || '', oninput: e => { S.notes[p.name] = e.target.value; } }),
       el('div', { class: 'row' },
@@ -404,6 +458,7 @@ function stepColors(C) {
 }
 function stepTitle(C) {
   appliedBanner(C);
+  fxPanel(C);
   C.append(choiceGrid(TITLES, t => t.id === S.title, t => S.title = t.id, t => styleCfg({ title: t.id }), t => el('p', {}, t.desc)));
 }
 
@@ -563,7 +618,8 @@ function brief() {
   L.push(`- Durée : ${fmt(S.A.duration)}${S.cuts.on ? ` (−${cutSaving(S.cuts.segs).toFixed(1)} s de blancs coupés)` : ''}`);
   L.push(`- Montage de départ : ${S.applied || 'aucun'}`);
   L.push(`- Hook : « ${S.hook.l1} / ${S.hook.l2} » — titre ${TITLES.find(t => t.id === S.title).name}, police ${S.font}, couleurs ${PALETTES[S.pal].name}`);
-  L.push(`- Sous-titres : ${S.captions.on && S.A.chunks.length ? CAPTION_STYLES.find(c => c.id === S.captions.style).name : 'non'} · Sons : ${S.sfx.on ? 'oui' : 'non'}`, '');
+  L.push(`- Sous-titres : ${S.captions.on && S.A.chunks.length ? CAPTION_STYLES.find(c => c.id === S.captions.style).name : 'non'} · Sons : ${S.sfx.on ? 'oui' : 'non'}`);
+  L.push(`- Effets : ${[S.depthOn && 'texte en arrière-plan', S.fx.pop && 'Kinetic Pop', S.fx.slide && 'Slide & Blur', S.fx.glow && `Glow (${GLOW_COLORS.find(g => g[0] === S.fx.glowColor)?.[1]})`].filter(Boolean).join(', ') || 'aucun'}`, '');
   if (S.media.length) {
     L.push('## Médias');
     S.media.forEach((m, i) => {
@@ -596,6 +652,8 @@ function brief() {
 async function loadFile(file) {
   if (!file) return;
   cancelTranscription();
+  resetMatting();
+  S.file = file;
   S.fileName = file.name;
   $('filename').textContent = file.name;
   video.src = URL.createObjectURL(file);
@@ -626,6 +684,7 @@ async function loadFile(file) {
     setProgress(`Analyse terminée${A.words.length ? ` : ${A.words.length} mots transcrits` : ''}. ${S.proposals.length} montages proposés.`, 1);
     S.preview = 0;
     video.currentTime = 0;
+    if (S.depthOn) startDepth();
     goto(S.media.length ? ST.proposals : ST.media);
   } catch (e) {
     A.status = 'error'; setProgress('Erreur d\'analyse : ' + e.message, 0); draw();
@@ -695,6 +754,7 @@ async function exportVideo() {
         rec.resume(); await video.play();
         busy = false;
       } else if (!busy) {
+        updateDepth(video);
         render(ctx, W, H, t, cfg);
         tickSfx(cfg, t);
       }

@@ -28,6 +28,31 @@ python3 serve.py          # ouvre http://localhost:8765/index.html
 
    « ↻ Autres propositions » en génère de nouvelles (polices, couleurs et styles différents).
 
+## Effet « Texte en arrière-plan » (profondeur 3D)
+
+Le texte passe **derrière toi** : la personne est détourée image par image, puis chaque image est composée en 3 couches :
+vidéo d'origine (fond) → texte du thème (milieu) → ta silhouette détourée (premier plan).
+
+```bash
+pip install -r requirements.txt   # opencv, mediapipe, rembg (Python 3.9 à 3.13)
+python3 serve.py
+```
+
+Coche **Effet Texte en Arrière-plan** dans « Effets du thème » (étapes Propositions et Titre). Une barre de progression suit le calcul. Deux moteurs :
+- **rembg** (`u2net_human_seg`) : le détourage le plus net, mais lent sur processeur (~0,5 s par image) ;
+- **mediapipe** (segmentation selfie multiclasse) : rapide et stable en vidéo.
+
+En mode **Auto**, l'app mesure rembg sur quelques images et bascule seule sur mediapipe si le calcul dépasserait ~1,5 × la durée de la vidéo. Passent derrière toi : le titre **Géant derrière toi** et les gros mots (beat cuts, compteur, word pop, phrase cinétique, mot plein écran). Le masque est gardé en cache : la même vidéo n'est détourée qu'une fois.
+
+Tu peux aussi le lancer à la main : `python3 depth.py ma-video.mp4 --preview apercu.png --text QUIT` (écrit le masque et une image de contrôle).
+
+## Motion design
+
+Toutes les animations utilisent des courbes de lissage, jamais de mouvement linéaire : Ease-Out cubique `1 − (1 − t)³` pour les entrées, Ease-In-Out `3t² − 2t³`, et Elastic Pop `1 + 2,70158 (t − 1)³ + 1,70158 (t − 1)²`. Trois effets se règlent par thème (chaque proposition a son réglage) :
+- **Kinetic Pop** : le mot clé grossit d'un coup à l'instant où tu le prononces, puis reprend sa taille ;
+- **Slide & Blur** : titres, sous-titres, cartes et bandeaux entrent par le bas avec un flou de mouvement sur les premières images ;
+- **Glow néon** : lueur floue (couleur du thème, cyan, rose, or ou blanc) derrière les lettres, texte net par-dessus.
+
 ## Ajouter tes images, PNG et vidéos (avec un commentaire)
 
 À l'étape **Médias**, dépose tes fichiers et écris à côté de chacun ce que tu veux en faire. L'app lit le commentaire et place le média toute seule :
@@ -77,12 +102,15 @@ Les PNG détourés deviennent des stickers. 5 mises en page : carte encadrée (f
 | `js/kit.js` | Polices, palettes, courbes d'animation, composants de dessin |
 | `js/analyze.js` | Analyse audio (blancs, temps forts) et transcription Whisper (Web Worker) |
 | `js/proposals.js` | Génération des propositions de montage |
-| `serve.py` | Serveur local + conversion MP4 via ffmpeg (`POST /convert`) |
+| `js/depth.js` | Récupère le masque, le synchronise avec la vidéo et le transforme en calque alpha |
+| `depth.py` | Détourage de la personne (rembg / mediapipe) → vidéo de masque |
+| `serve.py` | Serveur local, conversion MP4 (`POST /convert`) et détourage (`POST /matte`) |
+| `requirements.txt` | Dépendances Python, seulement pour l'effet arrière-plan |
 
 Une seule fonction, `render()`, dessine chaque image. Elle sert aux vignettes, à l'aperçu et à l'export : **ce que tu vois est exactement ce qui est exporté**. L'export rejoue la vidéo, la dessine image par image sur un canvas en résolution native (1920 px max) et l'enregistre avec le son via `MediaRecorder`, en sautant les blancs coupés.
 
 ## Limites
 
 - L'export se fait en temps réel (une vidéo de 1 min prend environ 1 min).
-- Les cartes de l'Orbit passent devant toi, jamais derrière (il faudrait détourer la personne).
+- L'effet arrière-plan suit le masque à ~0,1 s près pendant l'export : sur des gestes très rapides, le bord de la silhouette peut avoir un léger retard.
 - Les vidéos très longues (plus de 10 min environ) demandent beaucoup de mémoire pour l'analyse audio.

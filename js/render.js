@@ -1,13 +1,26 @@
 // Rendu d'une image complète : vidéo, médias, motions, sous-titres et titre.
 // La même fonction sert aux vignettes, à l'aperçu et à l'export.
-import { PALETTES, FONTS, fontOf, fstr, clamp, ease, backOut, env, fitSize, drawVideoRect, drawFit, hi, getVideo, SERIF, UI_BOLD } from './kit.js';
+import { PALETTES, FONTS, fontOf, fstr, clamp, ease, backOut, env, fitSize, drawVideoRect, drawFit, hi, getVideo, SERIF, UI_BOLD, kineticPop, slideBlur, withGlow } from './kit.js';
 import { MOTIONS, M, CATEGORIES, DIMS, HIDES_CAPTIONS, FULLSCREEN, drawMotion } from './motions.js';
 import { drawMedia, syncMediaVideo, MEDIA_DIMS } from './media.js';
 
 export { FONTS, PALETTES, MOTIONS, M, CATEGORIES, fontOf, fstr, clamp };
 export { setVideo } from './kit.js';
 
+// Effets de motion design par thème : Kinetic Pop (mot prononcé qui grossit), Slide & Blur
+// (entrées par le bas avec flou de mouvement), Glow (lueur néon derrière les lettres).
+export const GLOW_COLORS = [['accent', 'Couleur du thème'], ['#00E5FF', 'Cyan'], ['#FF3DCB', 'Rose néon'], ['#FFD60A', 'Or'], ['#FFFFFF', 'Blanc']];
+export const DEFAULT_FX = { pop: false, slide: false, glow: false, glowColor: 'accent' };
+const glowOf = (o, P) => o.fx?.glow ? (o.fx.glowColor === 'accent' || !o.fx.glowColor ? hi(P) : o.fx.glowColor) : null;
+
+// Éléments qui passent derrière la personne quand l'effet « texte en arrière-plan » est actif.
+export const DEPTH_BEHIND = new Set(['beat', 'countdown', 'kinetic', 'bigword', 'counter', 'words']);
+// Éléments qui entrent en Slide & Blur, et ceux qui reçoivent le Glow.
+const SLIDE_IN = new Set(['statcard', 'checklist', 'progress', 'grid', 'lower', 'comment', 'name', 'prompt', 'colorcard', 'numbers']);
+const GLOWING = new Set(['beat', 'countdown', 'kinetic', 'bigword', 'counter', 'words', 'statcard', 'name']);
+
 export const TITLES = [
+  { id: 'depth', name: 'Géant derrière toi', desc: 'Énorme texte qui passe derrière ta tête (avec l\'effet arrière-plan)' },
   { id: 'editorial', name: 'Éditorial', desc: 'Capitales grasses + gros mot en serif italique' },
   { id: 'tiles', name: 'Tuiles', desc: 'Lettres en tuiles qui tombent' },
   { id: 'stack', name: 'Empilé', desc: 'Gros texte, 2e ligne en accent' },
@@ -29,6 +42,16 @@ export const CAPTION_STYLES = [
 
 // ---------- Titres ----------
 function drawTitle(ctx, W, H, p, o) {
+  const P = PALETTES[o.pal];
+  ctx.save();
+  if (o.fx?.slide) slideBlur(ctx, W, H, p, .12);
+  // Le glow n'a de sens que sur du texte posé sur la vidéo, pas dans une étiquette ou une tuile.
+  const glow = ['depth', 'editorial', 'stack', 'type'].includes(o.title) ? glowOf(o, P) : null;
+  withGlow(ctx, glow, W, () => drawTitleInner(ctx, W, H, p, o));
+  ctx.restore();
+}
+
+function drawTitleInner(ctx, W, H, p, o) {
   const F = fontOf(o.font), P = PALETTES[o.pal];
   const l1 = o.hook.l1 || '', l2 = o.hook.l2 || '';
   const out = ease((1 - p) / .1);
@@ -109,6 +132,20 @@ function drawTitle(ctx, W, H, p, o) {
         ctx.fillStyle = P.accent; ctx.fillRect(W / 2 + w / 2 + fs * .08, y - fs * .45, fs * .08, fs * .9);
       }
     });
+  } else if (o.title === 'depth') {
+    // Texte géant à hauteur de tête : avec le détourage, la personne passe devant.
+    const a = l1.toUpperCase();
+    const s1 = fitSize(ctx, a, F, W * .96, W * .5);
+    const k = ease(p / .18);
+    ctx.globalAlpha = out * k; ctx.shadowBlur = 0;
+    ctx.font = fstr(F, s1); ctx.fillStyle = hi(P);
+    ctx.fillText(a, W / 2, H * .27 + (1 - k) * s1 * .25);
+    if (l2) {
+      const s2 = fitSize(ctx, l2, F, W * .8, W * .08);
+      ctx.globalAlpha = out * ease((p - .15) / .15); ctx.font = fstr(F, s2); ctx.fillStyle = P.text;
+      ctx.shadowBlur = W * .02;
+      ctx.fillText(l2, W / 2, H * .27 + s1 * .52 + s2 * .6);
+    }
   } else if (o.title === 'editorial') {
     // Gros mot en serif italique + petite ligne en capitales grasses (montage « storytelling »).
     const a = l1.toUpperCase(), b = l2;
@@ -157,6 +194,15 @@ function emphasisIdx(words) {
 }
 
 function drawCaptions(ctx, W, H, t, o) {
+  const chunk = o.captions.chunks.find(c => t >= c.s && t <= c.e + .15);
+  if (!chunk) return;
+  ctx.save();
+  if (o.fx?.slide) slideBlur(ctx, W, H, (t - chunk.s) / 1, .2);
+  withGlow(ctx, o.captions.style === 'box' ? null : glowOf(o, PALETTES[o.pal]), W, () => drawCaptionsInner(ctx, W, H, t, o));
+  ctx.restore();
+}
+
+function drawCaptionsInner(ctx, W, H, t, o) {
   const cap = o.captions;
   const chunk = cap.chunks.find(c => t >= c.s && t <= c.e + .15);
   if (!chunk) return;
@@ -177,7 +223,7 @@ function drawCaptions(ctx, W, H, t, o) {
     ctx.shadowColor = 'rgba(0,0,0,.55)'; ctx.shadowBlur = W * .025;
     if (small) { ctx.font = fstr(UI_BOLD, s1); ctx.fillStyle = '#fff'; ctx.fillText(small, W / 2, big ? y - s2 * .42 : y); }
     if (big && t >= big.s - .05) {
-      const k = backOut((t - big.s + .05) / .2);
+      const k = backOut((t - big.s + .05) / .2) * (o.fx?.pop ? kineticPop(t - big.s, .18) : 1);
       ctx.translate(W / 2, y + s1 * .2); ctx.scale(k, k);
       ctx.font = fstr(SERIF, s2); ctx.fillStyle = A; ctx.fillText(big.w, 0, 0);
     }
@@ -225,6 +271,10 @@ function drawCaptions(ctx, W, H, t, o) {
     for (const w of line) {
       const isCur = w.i === cur, spoken = t >= w.s;
       const Fw = fontFor(w.i);
+      // Kinetic Text Pop : le mot clé grossit à l'instant où il est prononcé.
+      const kp = o.fx?.pop && (w.i === emph || style === 'pop') ? kineticPop(t - w.s) : 1;
+      ctx.save();
+      if (kp !== 1) { ctx.translate(x + w.ww / 2, y); ctx.scale(kp, kp); ctx.translate(-(x + w.ww / 2), -y); }
       ctx.font = fstr(Fw, fs * (Fw === SERIF ? 1.12 : 1));
       if (style === 'box') {
         if (isCur) { ctx.fillStyle = A; ctx.beginPath(); ctx.roundRect(x - fs * .12, y - fs * .6, w.ww + fs * .24, fs * 1.2, fs * .15); ctx.fill(); }
@@ -258,6 +308,7 @@ function drawCaptions(ctx, W, H, t, o) {
         ctx.fillText(w.w, x, y);
         ctx.restore();
       }
+      ctx.restore();
       x += w.ww + sp;
     }
   });
@@ -308,13 +359,47 @@ export function render(ctx, W, H, t, o) {
       ctx.fillText(text, W / 2, vy - head / 2 - pad / 2); ctx.restore();
     }
   }
-  for (const m of active) if (FULLSCREEN.has(m.type)) drawMotion(ctx, W, H, m, t - m.start, o);
-  for (const m of mediaOn) drawMedia(ctx, W, H, m, t - m.start, o);
-  for (const m of active) if (m.type !== 'zoom' && m.type !== 'shrink' && !FULLSCREEN.has(m.type)) drawMotion(ctx, W, H, m, t - m.start, o);
   const fullMedia = mediaOn.some(m => m.layout === 'full');
-  // Le titre s'efface quand une carte, un plein écran ou un écran partagé occupe le haut.
-  const covered = dim > .3 || fullMedia || mediaOn.some(m => m.layout === 'split') || active.some(m => FULLSCREEN.has(m.type));
+  // Le titre s'efface quand une carte, un plein écran ou un écran partagé occupe le haut
+  // (sauf en mode profondeur, où il passe justement derrière la personne).
+  const depthOn = !!(o.depth && !shrink && !fullMedia);
+  const covered = dim > .3 || fullMedia || mediaOn.some(m => m.layout === 'split') || (!depthOn && active.some(m => FULLSCREEN.has(m.type)));
   const titleOn = o.title && !covered && t >= o.titleStart && t <= o.titleStart + o.titleDur;
+  const behind = m => depthOn && DEPTH_BEHIND.has(m.type);
+  const motion = m => drawMotionFx(ctx, W, H, m, t - m.start, o);
+
+  // Couche 1 (milieu) : éléments placés derrière la personne.
+  for (const m of active) if (FULLSCREEN.has(m.type) && (!depthOn || behind(m))) motion(m);
+  let behindDrawn = active.some(m => behind(m));
+  for (const m of active) if (behind(m) && !FULLSCREEN.has(m.type)) motion(m);
+  if (depthOn && titleOn) { drawTitle(ctx, W, H, (t - o.titleStart) / o.titleDur, o); behindDrawn = true; }
+  // Couche 2 (premier plan) : la personne détourée, redessinée par-dessus le texte.
+  if (behindDrawn) drawPerson(ctx, W, H, zoom, o.depth);
+
+  for (const m of mediaOn) drawMedia(ctx, W, H, m, t - m.start, o);
+  for (const m of active) if (m.type !== 'zoom' && m.type !== 'shrink' && !FULLSCREEN.has(m.type) && !behind(m)) motion(m);
   if (o.captions && o.captions.chunks.length && !fullMedia && !active.some(m => HIDES_CAPTIONS.has(m.type))) drawCaptions(ctx, W, H, t, o);
-  if (titleOn) drawTitle(ctx, W, H, (t - o.titleStart) / o.titleDur, o);
+  if (titleOn && !depthOn) drawTitle(ctx, W, H, (t - o.titleStart) / o.titleDur, o);
+}
+
+function drawMotionFx(ctx, W, H, m, lt, o) {
+  ctx.save();
+  if (o.fx?.slide && SLIDE_IN.has(m.type)) slideBlur(ctx, W, H, lt / m.dur, .2);
+  withGlow(ctx, GLOWING.has(m.type) ? glowOf(o, PALETTES[o.pal]) : null, W, () => drawMotion(ctx, W, H, m, lt, o));
+  ctx.restore();
+}
+
+// La personne seule (vidéo × masque alpha), à la même place et au même zoom que la vidéo.
+let personLayer = null;
+function drawPerson(ctx, W, H, zoom, alpha) {
+  if (!personLayer) personLayer = document.createElement('canvas');
+  if (personLayer.width !== W || personLayer.height !== H) { personLayer.width = W; personLayer.height = H; }
+  const g = personLayer.getContext('2d');
+  g.globalCompositeOperation = 'source-over';
+  g.clearRect(0, 0, W, H);
+  drawVideoRect(g, 0, 0, W, H, 0, zoom);
+  g.globalCompositeOperation = 'destination-in';
+  drawFit(g, alpha, 0, 0, W, H, { zoom });
+  g.globalCompositeOperation = 'source-over';
+  ctx.drawImage(personLayer, 0, 0);
 }

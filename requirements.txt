@@ -1,0 +1,9 @@
+# Nécessaire seulement pour l'effet « Texte en arrière-plan » (détourage de la personne).
+# Le reste de l'app fonctionne sans aucune dépendance Python.
+numpy
+opencv-python-headless
+# Moteur rapide, recommandé pour la vidéo (Python 3.9 à 3.13).
+mediapipe
+# Moteur au détourage le plus net, mais lent sur processeur (bascule auto sur mediapipe si trop lent).
+rembg[cpu]
+pillow
