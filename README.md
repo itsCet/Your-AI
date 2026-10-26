@@ -35,9 +35,13 @@ vidéo d'origine (fond) → texte du thème (milieu) → ta silhouette détouré
 
 Coche **Effet Texte en Arrière-plan** dans « Effets du thème » (étapes Propositions et Titre). Passent derrière toi : le titre **Géant derrière toi** et les gros mots (beat cuts, compteur, word pop, phrase cinétique, mot plein écran).
 
-**Par défaut, tout se fait dans le navigateur**, sans serveur ni installation : [MediaPipe Tasks Vision](https://ai.google.dev/edge/mediapipe/solutions/vision/image_segmenter) (`ImageSegmenter`, accéléré par la carte graphique) segmente l'image exacte qui est dessinée, donc la silhouette n'a aucun décalage, même à l'export. Deux modèles : **Précis** (selfie multiclasse, 16 Mo, cheveux et vêtements) ou **Rapide** (250 Ko). Rien n'est envoyé en ligne. Fonctionne aussi sur un hébergement statique (Vercel, Netlify…).
+**Par défaut, tout se fait dans le navigateur**, sans serveur ni installation, avec [MediaPipe Tasks Vision](https://ai.google.dev/edge/mediapipe/solutions/vision/image_segmenter) (`ImageSegmenter`) :
+- quand tu coches l'effet, ta silhouette est **préparée une fois**, image par image, dans un Web Worker (l'interface reste fluide, une barre de progression suit le calcul, l'effet apparaît au fur et à mesure) ;
+- l'app chronomètre la carte graphique et le processeur et garde le plus rapide (certains navigateurs annoncent un GPU qui n'est qu'une émulation lente) ;
+- ensuite l'aperçu et l'export relisent la silhouette **à l'image près** : aucun décalage, même sur une machine modeste ;
+- deux modèles : **Précis** (selfie multiclasse, 16 Mo, cheveux et vêtements) ou **Rapide** (250 Ko).
 
-Sur une machine sans bonne carte graphique, l'aperçu espace les calculs pour rester fluide ; l'export, lui, segmente toujours chaque image.
+Rien n'est envoyé en ligne. Fonctionne aussi sur un hébergement statique (Vercel, Netlify…).
 
 **Option : moteur Python** (`depth.py`), si tu lances l'app avec `serve.py` et que tu installes `pip install -r requirements.txt` :
 - **rembg** (`u2net_human_seg`) : le détourage le plus net, mais lent (~0,5 s par image) ;

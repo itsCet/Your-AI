@@ -137,10 +137,13 @@ function drawTitleInner(ctx, W, H, p, o) {
     const a = l1.toUpperCase();
     const s1 = fitSize(ctx, a, F, W * .96, W * .5);
     const k = ease(p / .18);
-    ctx.globalAlpha = out * k; ctx.shadowBlur = 0;
-    ctx.font = fstr(F, s1); ctx.fillStyle = hi(P);
-    ctx.fillText(a, W / 2, H * .27 + (1 - k) * s1 * .25);
-    if (l2) {
+    // Avec la profondeur, le gros mot passe derrière (part 'back') et la 2e ligne reste devant (part 'front').
+    if (o.part !== 'front') {
+      ctx.globalAlpha = out * k; ctx.shadowBlur = 0;
+      ctx.font = fstr(F, s1); ctx.fillStyle = hi(P);
+      ctx.fillText(a, W / 2, H * .27 + (1 - k) * s1 * .25);
+    }
+    if (l2 && o.part !== 'back') {
       const s2 = fitSize(ctx, l2, F, W * .8, W * .08);
       ctx.globalAlpha = out * ease((p - .15) / .15); ctx.font = fstr(F, s2); ctx.fillStyle = P.text;
       ctx.shadowBlur = W * .02;
@@ -372,9 +375,10 @@ export function render(ctx, W, H, t, o) {
   for (const m of active) if (FULLSCREEN.has(m.type) && (!depthOn || behind(m))) motion(m);
   let behindDrawn = active.some(m => behind(m));
   for (const m of active) if (behind(m) && !FULLSCREEN.has(m.type)) motion(m);
-  if (depthOn && titleOn) { drawTitle(ctx, W, H, (t - o.titleStart) / o.titleDur, o); behindDrawn = true; }
+  if (depthOn && titleOn) { drawTitle(ctx, W, H, (t - o.titleStart) / o.titleDur, { ...o, part: 'back' }); behindDrawn = true; }
   // Couche 2 (premier plan) : la personne détourée, redessinée par-dessus le texte.
   if (behindDrawn) drawPerson(ctx, W, H, zoom, o.depth);
+  if (depthOn && titleOn && o.title === 'depth') drawTitle(ctx, W, H, (t - o.titleStart) / o.titleDur, { ...o, part: 'front' });
 
   for (const m of mediaOn) drawMedia(ctx, W, H, m, t - m.start, o);
   for (const m of active) if (m.type !== 'zoom' && m.type !== 'shrink' && !FULLSCREEN.has(m.type) && !behind(m)) motion(m);
