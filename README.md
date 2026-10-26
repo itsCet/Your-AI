@@ -1,6 +1,6 @@
 # Video Edit Studio
 
-Tu mets une vidéo, l'app l'analyse et te **propose des montages complets** (titre d'accroche, sous-titres, animations, coupes des blancs). Tu choisis, tu ajustes, tu exportes en MP4.
+Tu mets une vidéo, l'app la transcrit et fait un **premier montage** (accroche, sous-titres, animations liées à ce que tu dis, coupes des blancs). Tu choisis ton **look** en un clic par étape, puis tu **contrôles tout** : chaque mot (fautes, franglais), chaque coupe, chaque animation. Export MP4.
 Inspiré de la vidéo « Don't sleep on Claude editing! ». Tout tourne **sur ton ordinateur** : la vidéo n'est envoyée nulle part.
 
 ## Lancer
@@ -22,26 +22,53 @@ python3 serve.py          # ouvre http://localhost:8765/index.html
 
    | Ce que tu dis | Ce que l'app en fait |
    | --- | --- |
-   | « en dix minutes », « moins de 5 euros », « 50 % » | carte avec le chiffre qui monte (« 10 / MINUTES ») ou compteur |
+   | « en dix minutes », « moins de 5 euros », « 50 % » | carte chiffre (« 10 / MINUTES ») ou compteur |
    | « d'abord… ensuite… enfin… » ou « il faut des tomates, de l'ail et du basilic » | checklist dont chaque ligne se coche **au moment où tu la dis** |
    | « ce n'est pas la crème mais le parmesan » | Avant / Après : ✗ Crème (barré au moment du « mais ») → ✓ Parmesan |
-   | un objet ou une idée : « tomates », « argent », « téléphone »… | emoji qui illustre le mot (🍅 💶 📱), environ 250 mots dans 9 thèmes |
-   | une question | la question tapée dans une bulle |
-   | une phrase courte dite avec force | phrase cinétique plein écran |
-   | « vraiment », « jamais », « secret », « gratuit »… | tampon |
-   | « un seul », « le seul », « parmi tous » | une case allumée parmi les autres |
+   | un objet ou une idée : « tomates », « argent », « téléphone »… | emoji qui illustre le mot |
+   | une question | commentaire d'abonné à l'écran |
+   | une phrase courte dite avec force | phrase plein écran, mots surlignés, carte couleur |
+   | un mot fort | note manuscrite entourée, tampon |
 
-   Le **sujet** de la vidéo (cuisine, argent, tech, sport, santé, voyage, beauté…) est deviné à partir des mots employés et choisit les couleurs du montage « Sur mesure ».
-4. **8 propositions de montage** : chacune a son style (police, couleurs, titre, sous-titres, effets) et sa façon de traduire ces moments en animations, plus ou moins dense. Rien n'est inventé : tous les textes viennent de ta vidéo.
+4. **Premier montage automatique**, fait seulement avec les éléments et motions cochés dans ton look. Rien n'est inventé : tous les textes viennent de ta vidéo.
 
-   « ↻ Autres propositions » en génère de nouvelles (polices, couleurs et styles différents).
+## Les 3 onglets
+
+### 1. Look (7 étapes)
+
+**Couleurs · Polices · Accroche · Sous-titres · Éléments · Motion · Revue.** Chaque carte montre **ta vidéo** avec l'option, animée en direct. Un clic l'applique partout (accroche, sous-titres, cartes, animations).
+
+- **Départs rapides** : Signature, Clean, Loud, Playful, Scrapbook, Derrière toi. Chacun remplit toutes les étapes, et tout reste modifiable.
+- 8 palettes, 8 paires de polices (celles marquées « manuscrit » ajoutent une écriture à la main sur les mots d'accent), 7 styles d'accroche, 8 styles de sous-titres.
+- **Éléments** (cartes posées sur la vidéo) : note manuscrite, carte couleur, mot tampon, carte chiffre, checklist, avant / après, illustration emoji, écran d'appli, nom + rôle.
+- **Motion** (mouvements) : orbite de photos, carrousel, la vidéo rétrécit dans une carte, commentaire d'abonné, mots surlignés, compteur, phrase plein écran, beat cuts, punch-in, projecteur.
+
+Tu coches ce que tu veux : le montage automatique n'utilise que ça. Les animations sont faites avec [GSAP](https://gsap.com) (timelines rejouées à l'image près, en avant comme en arrière).
+
+### 2. Édition : la transcription comme un document
+
+- **Corriger un mot** (franglais, noms propres) : clique dessus, tape la bonne orthographe. « Partout et retenir » le corrige dans toute la vidéo et l'ajoute au **dictionnaire** : il sera corrigé automatiquement dans tes prochaines vidéos. Double-clic pour corriger directement dans le texte. Un mot corrigé est souligné en vert (le mot transcrit s'affiche au survol).
+- **Couper** : sélectionne des mots (glisser) → ✂ Couper. Ils sont barrés et sautés à la lecture et à l'export. Les blancs longs sont affichés (« · 1,4 s · ») et barrés quand ils sont coupés.
+- **Animations posées sur les mots** : chaque animation est une étiquette ▶ à l'endroit du texte où elle apparaît. Clique dessus pour tout changer : type, variante, textes, début, durée, son. Les mots couverts sont soulignés de sa couleur.
+- **Ajouter une animation** : sélectionne des mots → « + Ajouter une animation ici ». Le texte est prérempli avec les mots choisis.
+- **Médias** : tes images, PNG et vidéos avec un commentaire (voir plus bas).
+
+### 3. Revue
+
+Coupe des blancs (sensibilité réglable, visible en rouge sur la timeline), sous-titres, effets sonores, effet texte derrière toi, **export MP4**, **couverture** PNG 1080 × 1920.
+
+## Faire le montage avec Claude (dans la conversation)
+
+1. Onglet Édition → **📋 Copier pour Claude** : copie la transcription numérotée mot à mot, ta boîte à outils (éléments et motions du look) et le format de réponse.
+2. Colle-le à Claude. Il répond avec un plan JSON : accroche, **corrections** de mots, **coupes**, animations posées sur des index de mots avec leurs textes.
+3. **📥 Importer un plan** : colle la réponse. Le plan remplace le montage automatique (ce que tu as ajouté à la main est gardé), puis tu corriges tout dans l'Édition.
 
 ## Effet « Texte en arrière-plan » (profondeur 3D)
 
 Le texte passe **derrière toi** : à chaque image, ta silhouette est détourée, puis l'image est composée en 3 couches :
 vidéo d'origine (fond) → texte du thème (milieu) → ta silhouette détourée (premier plan).
 
-Coche **Effet Texte en Arrière-plan** dans « Effets du thème » (étapes Propositions et Titre). Passent derrière toi : le titre **Géant derrière toi** et les gros mots (beat cuts, compteur, word pop, phrase cinétique, mot plein écran).
+Coche **Effet Texte en Arrière-plan** (Look → Accroche, ou Revue), ou prends le départ rapide « Derrière toi ». Passent derrière toi : l'accroche **Géant derrière toi** et les gros textes (phrase plein écran, beat cuts, compteur, mots surlignés, écran d'appli).
 
 **Par défaut, tout se fait dans le navigateur**, sans serveur ni installation, avec [MediaPipe Tasks Vision](https://ai.google.dev/edge/mediapipe/solutions/vision/image_segmenter) (`ImageSegmenter`) :
 - quand tu coches l'effet, ta silhouette est **préparée une fois**, image par image, dans un Web Worker (l'interface reste fluide, une barre de progression suit le calcul, l'effet apparaît au fur et à mesure) ;
@@ -60,14 +87,14 @@ Le serveur calcule une vidéo de masque une fois pour toutes (gardée en cache).
 
 ## Motion design
 
-Toutes les animations utilisent des courbes de lissage, jamais de mouvement linéaire : Ease-Out cubique `1 − (1 − t)³` pour les entrées, Ease-In-Out `3t² − 2t³`, et Elastic Pop `1 + 2,70158 (t − 1)³ + 1,70158 (t − 1)²`. Trois effets se règlent par thème (chaque proposition a son réglage) :
-- **Kinetic Pop** : le mot clé grossit d'un coup à l'instant où tu le prononces, puis reprend sa taille ;
-- **Slide & Blur** : titres, sous-titres, cartes et bandeaux entrent par le bas avec un flou de mouvement sur les premières images ;
-- **Glow néon** : lueur floue (couleur du thème, cyan, rose, or ou blanc) derrière les lettres, texte net par-dessus.
+Toutes les animations sont des timelines GSAP (`expo.out`, `back.out`, `power3`…), jamais de mouvement linéaire. Trois effets se règlent dans Look → Motion :
+- **Kinetic Pop** : le mot clé grossit d'un coup à l'instant où tu le prononces ;
+- **Slide & Blur** : entrées par le bas avec un flou de mouvement ;
+- **Glow néon** : lueur floue de la couleur du look derrière les lettres.
 
 ## Ajouter tes images, PNG et vidéos (avec un commentaire)
 
-À l'étape **Médias**, dépose tes fichiers et écris à côté de chacun ce que tu veux en faire. L'app lit le commentaire et place le média toute seule :
+Dans l'onglet **Édition** (en bas), dépose tes fichiers et écris à côté de chacun ce que tu veux en faire. L'app lit le commentaire et place le média toute seule :
 
 | Tu écris | L'app comprend |
 | --- | --- |
@@ -79,38 +106,22 @@ Toutes les animations utilisent des courbes de lissage, jamais de mouvement lin�
 
 Les PNG détourés deviennent des stickers. 5 mises en page : carte encadrée (fond flouté, REC, étiquette), plein écran, écran partagé, incrustation, sticker. Ce que l'app a compris s'affiche sous le commentaire (« ✓ Compris : … ») et tout reste modifiable à la main.
 
-## Les 10 étapes
-
-1. **Import** : dépose la vidéo, choisis la langue, l'analyse démarre.
-2. **Médias** : tes images, PNG et b-roll avec leur commentaire (voir plus haut).
-3. **Propositions** : 8 montages construits à partir de ce que tu dis, chacun avec sa personnalité (Sur mesure, Derrière toi, Story doré, Ciné cuivré, Studio crème, Rose tag, Clean pro, Minimal), animés en direct sur ta vidéo avec tes médias.
-4. **Hook** · 5. **Police** · 6. **Couleurs** · 7. **Titre** : ajuste le style (tout est prévisualisé en direct).
-8. **Motions** :
-   - **Moments de ta vidéo** : une carte par moment repéré, avec l'image de ta vidéo à cet instant, la phrase dite et l'animation qui l'illustre. Clique sur la carte pour l'ajouter ou la retirer ; tu peux changer le type d'animation et corriger le texte.
-   - **Bibliothèque** : toutes les animations, ajoutées à la tête de lecture avec le texte de ce que tu dis à ce moment-là.
-9. **Sous-titres** : 7 styles (Éditorial, Mixte, Crochets, Bandeau, Pop, Boîte, Karaoké), position réglable, texte corrigeable.
-10. **Export** :
-    - coupe des blancs (visible en rouge sur la timeline) ;
-    - **effets sonores** générés par l'app (pop, whoosh, impact, frappe, clic, ding), un son réglable par motion, mixés dans l'export ;
-    - timing de chaque motion ;
-    - export MP4 ;
-    - **couverture du reel** en PNG 1080 × 1920 avec ton titre ;
-    - **brief pour Claude** : un résumé (médias + commentaires, éléments gardés / jetés, notes) à coller dans ta conversation avec Claude pour qu'il ajuste le montage ou l'app.
-
 ## Structure
 
 | Fichier | Rôle |
 | --- | --- |
 | `index.html` | Mise en page et styles |
-| `js/app.js` | Interface, étapes, aperçu, timeline, sons, export, couverture, brief |
-| `js/render.js` | Dessin d'une image complète : vidéo, médias, motions, sous-titres, titre |
-| `js/semantics.js` | Compréhension du discours : chiffres, listes, oppositions, questions, objets à illustrer, sujet |
-| `js/motions.js` | Bibliothèque des 28 motions |
+| `js/app.js` | Interface (onglets Look, Édition, Revue), aperçu, timeline, sons, export, couverture |
+| `js/look.js` | Palettes, paires de polices, styles d'accroche et de sous-titres, catalogue des éléments et motions, départs rapides |
+| `js/render.js` | Dessin d'une image complète : vidéo, médias, éléments, sous-titres, accroche |
+| `js/elements.js` | Les éléments et motions (timelines GSAP + dessin) |
+| `js/anim.js` | Cache des timelines GSAP et primitives dessinées à la main (cercle, trait, surligneur, coche) |
+| `js/plan.js` | Montage automatique et aller-retour avec Claude (prompt, lecture du plan) |
+| `js/semantics.js` | Compréhension du discours : chiffres, listes, oppositions, questions, objets à illustrer |
 | `js/media.js` | Lecture des commentaires et mises en page des médias |
 | `js/sfx.js` | Effets sonores synthétisés |
-| `js/kit.js` | Polices, palettes, courbes d'animation, composants de dessin |
+| `js/kit.js` | Palettes, composants de dessin, courbes |
 | `js/analyze.js` | Analyse audio (blancs, temps forts) et transcription Whisper (Web Worker) |
-| `js/proposals.js` | Génération des propositions de montage |
 | `js/depth.js` | Détourage dans le navigateur (MediaPipe) ou via le serveur, calque alpha de la personne |
 | `depth.py` | Détourage de la personne (rembg / mediapipe) → vidéo de masque |
 | `serve.py` | Serveur local, conversion MP4 (`POST /convert`) et détourage (`POST /matte`) |

@@ -3,32 +3,30 @@
 
 export const SFX = [['', 'Aucun'], ['pop', 'Pop'], ['click', 'Clic'], ['type', 'Frappe'], ['whoosh', 'Whoosh'], ['bam', 'Impact'], ['ding', 'Ding']];
 
-// Son par défaut de chaque motion.
+// Son par défaut de chaque élément.
 export const DEFAULT_SFX = {
-  statcard: 'whoosh', checklist: 'click', progress: 'whoosh', grid: 'ding', counter: 'click', lower: 'whoosh', comment: 'pop',
-  name: 'whoosh', prompt: 'type', stamp: 'bam', note: 'pop', colorcard: 'pop', numbers: 'pop', typing: 'pop', words: 'pop',
-  beat: 'bam', countdown: 'click', kinetic: 'type', bigword: 'whoosh', spotlight: '', recframe: 'click', focus: 'click',
-  emoji: 'pop', versus: 'whoosh', zoom: 'whoosh', orbit: 'whoosh', carousel: 'whoosh', shrink: 'whoosh', media: 'pop', title: 'whoosh',
+  note: 'pop', colorcard: 'whoosh', stamp: 'bam', statcard: 'whoosh', checklist: 'click', versus: 'whoosh', emoji: 'pop',
+  screen: 'whoosh', lower: 'whoosh', orbit: 'whoosh', carousel: 'whoosh', shrink: 'whoosh', comment: 'pop',
+  wordreveal: 'pop', counter: 'click', kinetic: 'type', beat: 'bam', zoom: 'whoosh', spotlight: '', media: 'pop', title: 'whoosh',
 };
 
 // Liste des sons d'un élément, en secondes depuis son début (certains sons se répètent).
 export function sfxEvents(item) {
   const kind = item.sfx ?? DEFAULT_SFX[item.type] ?? '';
   if (!kind) return [];
-  const words = String(item.text || '').split(/\s+/).filter(Boolean);
-  const repeat = (n, span) => Array.from({ length: n }, (_, i) => ({ t: i * span / n, kind }));
+  const f = item.f || {};
+  const count = s => String(s || '').split(/\s+/).filter(Boolean).length;
+  const repeat = (n, span, from = 0) => Array.from({ length: n }, (_, i) => ({ t: from + i * span / n, kind }));
   switch (item.type) {
-    case 'beat': case 'words': return repeat(Math.max(1, words.length), item.dur);
-    case 'kinetic': return repeat(Math.max(1, words.length), item.dur * .7);
-    case 'countdown': return repeat(Math.max(1, parseInt(item.text, 10) || 3), item.dur);
-    case 'numbers': return repeat(Math.max(1, parseInt(item.text, 10) || 3), item.dur * .5);
+    case 'beat': return repeat(Math.max(1, count(f.words)), item.dur);
+    case 'kinetic': return item.times?.length ? item.times.map(t => ({ t: t + .15, kind })) : repeat(Math.min(10, Math.max(1, count(f.text))), item.dur * .55, .15);
     case 'checklist': {
       // Un clic par ligne cochée, au moment où elle apparaît.
-      if (item.times?.length) return item.times.map(t => ({ t, kind }));
-      const n = Math.max(1, String(item.text).split('|').length - 1);
-      return Array.from({ length: n }, (_, i) => ({ t: item.dur * (.1 + i * .6 / n), kind }));
+      if (item.times?.length) return item.times.map(t => ({ t: t + .15, kind }));
+      const n = Math.max(1, (Array.isArray(f.items) ? f.items : String(f.items || '').split('\n')).filter(Boolean).length);
+      return Array.from({ length: n }, (_, i) => ({ t: .5 + i * Math.min(.6, (item.dur - 1) / n), kind }));
     }
-    case 'prompt': return repeat(Math.min(14, Math.max(1, String(item.text).length)), item.dur * .55).map(e => ({ ...e, t: e.t + item.dur * .08 }));
+    case 'versus': return [{ t: 0, kind }, { t: (item.turn ?? item.dur * .38) + .2, kind: 'ding' }];
     default: return [{ t: 0, kind }];
   }
 }
