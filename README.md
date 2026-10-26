@@ -1,7 +1,7 @@
 # Video Edit Studio
 
-Outil local pour monter des vidéos verticales courtes (Reels, TikTok, Shorts) en 7 étapes, inspiré de la vidéo « Don't sleep on Claude editing! ».
-Chaque aperçu est dessiné **en direct sur ta propre vidéo**, dans tes couleurs et ta police. Rien ne quitte ton ordinateur.
+Tu mets une vidéo, l'app l'analyse et te **propose des montages complets** (titre d'accroche, sous-titres, animations, coupes des blancs). Tu choisis, tu ajustes, tu exportes en MP4.
+Inspiré de la vidéo « Don't sleep on Claude editing! ». Tout tourne **sur ton ordinateur** : la vidéo n'est envoyée nulle part.
 
 ## Lancer
 
@@ -9,35 +9,49 @@ Chaque aperçu est dessiné **en direct sur ta propre vidéo**, dans tes couleur
 python3 serve.py          # ouvre http://localhost:8765/index.html
 ```
 
-- **Python 3** requis (aucune dépendance à installer).
-- **ffmpeg** optionnel mais recommandé : l'export est alors converti en **MP4 H.264/AAC**, le format accepté partout. Sans ffmpeg, tu récupères le fichier brut du navigateur (WebM).
-- Utilise Chrome, Edge ou Arc, et garde l'onglet au premier plan pendant l'export.
+- **Python 3** (aucune dépendance à installer).
+- **ffmpeg** recommandé : l'export est converti en **MP4 H.264/AAC** (Instagram, TikTok, iPhone). Sans ffmpeg, tu récupères le fichier brut du navigateur.
+- **Chrome, Edge ou Arc** (desktop). Garde l'onglet au premier plan pendant l'export.
+- Il faut passer par `serve.py` (ou un autre serveur local) : la page ne marche pas en double-cliquant sur `index.html`.
 
-## Les 7 étapes
+## Ce que fait l'analyse
 
-1. **Import** : dépose une vidéo (verticale idéalement).
-2. **Hook** : les deux lignes du titre d'ouverture et leur durée à l'écran.
-3. **Police** : Anton, Bebas Neue, Archivo Black, DM Serif Display, Space Mono, Inter.
-4. **Couleurs** : 6 palettes (accent, texte, encre).
-5. **Style de titre** : Tuiles (lettres qui tombent), Empilé, Bandeau, Machine à écrire.
-6. **Motions** : coche celles que tu veux (**Prendre**). **Plus comme ça** ajoute une variante (couleurs inversées, sens inversé, autre position).
-   - Orbit : des photos tournent autour de toi à hauteur de poitrine
-   - Carousel : des cartes défilent en ligne
-   - Shrink card : la vidéo rétrécit sur une carte couleur avec un texte
-   - Comment pop-up : une bulle de commentaire apparaît
-   - Compteur : un chiffre qui monte (ex. « 10000 vues »)
-   - Word pop : les mots claquent un par un
-   - Punch-in : un zoom rapide
-   - Lower third : un bandeau nom qui glisse
-7. **Timing & export** : règle le début, la durée et le texte de chaque motion (le bouton « ⇤ Tête de lecture » la place au moment en cours), puis exporte.
+1. **Audio** : volume de la voix, détection des **blancs** (à couper) et des **temps forts** (pour placer des zooms).
+2. **Transcription mot à mot** avec Whisper (`whisper-base`), exécutée dans le navigateur via [transformers.js](https://github.com/huggingface/transformers.js). Le premier lancement télécharge le modèle (~200 Mo), ensuite il est en cache. Utilise le GPU (WebGPU) s'il y en a un, sinon le processeur.
+3. **6 propositions de montage** construites à partir de ce que tu dis :
+   - le **hook** est tiré de ta première phrase, d'une question ou du moment le plus fort ;
+   - un **compteur** apparaît quand tu prononces un chiffre (« 10 000 abonnés ») ;
+   - une **bulle de commentaire** reprend une question que tu poses ;
+   - un **word pop** reprend les mots clés d'une phrase ;
+   - des **punch-in** tombent sur les temps forts de ta voix ;
+   - une **carte de fin** avec un appel à l'action (Abonne-toi, Partie 2 ?, …).
 
-## Comment ça marche
+   « ↻ Autres propositions » en génère de nouvelles (polices, couleurs et styles différents).
 
-- `index.html` : toute l'app dans un seul fichier, sans framework. Une seule fonction `render(ctx, W, H, t, config)` dessine une image complète sur un `<canvas>` : la vidéo, puis le titre, puis les motions actives au temps `t`. Cette même fonction sert aux vignettes, à l'aperçu principal et à l'export, donc **ce que tu vois est exactement ce que tu exportes**.
-- Export : la vidéo est rejouée depuis le début, chaque image est dessinée sur un canvas en résolution native (1920 px max), et le flux du canvas est enregistré avec l'audio de la vidéo via `MediaRecorder`.
-- `serve.py` : un petit serveur Python qui sert la page et expose `POST /convert` (conversion MP4 par ffmpeg) et `GET /health`.
+## Les 9 étapes
+
+1. **Import** : dépose la vidéo, choisis la langue, l'analyse démarre.
+2. **Propositions** : 6 montages animés en direct sur ta vidéo. « Aperçu » pour le voir en grand, « Choisir » pour l'appliquer.
+3. **Hook** · 4. **Police** · 5. **Couleurs** · 6. **Titre** : ajuste le style (tout est prévisualisé en direct).
+7. **Motions** : Orbit, Carousel, Shrink card, Comment pop-up, Compteur, Word pop, Punch-in, Lower third. « Prendre » pour ajouter, « Plus comme ça » pour une variante.
+8. **Sous-titres** : 3 styles (Pop, Boîte, Karaoké), position réglable, texte corrigeable phrase par phrase.
+9. **Export** : coupe des blancs (sensibilité réglable, visible en rouge sur la timeline), timing de chaque motion, puis export.
+
+## Structure
+
+| Fichier | Rôle |
+| --- | --- |
+| `index.html` | Mise en page et styles |
+| `js/app.js` | Interface, étapes, aperçu, timeline, export |
+| `js/render.js` | Dessin d'une image complète : vidéo, titre, sous-titres, motions |
+| `js/analyze.js` | Analyse audio (blancs, temps forts) et transcription Whisper (Web Worker) |
+| `js/proposals.js` | Génération des propositions de montage |
+| `serve.py` | Serveur local + conversion MP4 via ffmpeg (`POST /convert`) |
+
+Une seule fonction, `render()`, dessine chaque image. Elle sert aux vignettes, à l'aperçu et à l'export : **ce que tu vois est exactement ce qui est exporté**. L'export rejoue la vidéo, la dessine image par image sur un canvas en résolution native (1920 px max) et l'enregistre avec le son via `MediaRecorder`, en sautant les blancs coupés.
 
 ## Limites
 
-- Pas de sous-titres automatiques (il faudrait un modèle de transcription comme Whisper).
-- Les cartes de l'Orbit passent devant toi, jamais derrière (il faudrait une segmentation de la personne).
+- L'export se fait en temps réel (une vidéo de 1 min prend environ 1 min).
+- Les cartes de l'Orbit passent devant toi, jamais derrière (il faudrait détourer la personne).
+- Les vidéos très longues (plus de 10 min environ) demandent beaucoup de mémoire pour l'analyse audio.
