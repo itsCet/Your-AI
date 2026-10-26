@@ -1,5 +1,5 @@
 import { FONTS, PALETTES, TITLES, CAPTION_STYLES, MOTIONS, CATEGORIES, M, render, setVideo, fstr, clamp, GLOW_COLORS, DEFAULT_FX } from './render.js';
-import { depth, BROWSER_MODELS, startBrowserMatting, startServerMatting, resetMatting, updateDepth } from './depth.js';
+import { depth, BROWSER_MODELS, startBrowserMatting, startServerMatting, resetMatting, updateDepth, whenPrepared } from './depth.js';
 import { decodeAudio, loudness, findSilences, cutsFromSilences, findPeaks, transcribe, cancelTranscription, chunkWords, retextChunk } from './analyze.js';
 import { makeProposals } from './proposals.js';
 import { MEDIA_LAYOUTS, POSITIONS, interpretMedia, hasAlpha } from './media.js';
@@ -116,7 +116,7 @@ function applyProposal(p) {
 // aucun serveur nécessaire). Moteur « server:… » : serve.py / depth.py (rembg ou mediapipe Python).
 function startDepth() {
   const [kind, name] = S.depthEngine.split(':');
-  if (kind === 'browser') return startBrowserMatting(name, depthProgress);
+  if (kind === 'browser') return startBrowserMatting(S.file, name, depthProgress);
   if (!S.file || !S.server.matting?.length) return;
   startServerMatting(S.file, name, depthProgress);
 }
@@ -132,9 +132,10 @@ function depthProgress() {
 function depthText() {
   if (depth.status === 'loading') return 'Chargement de MediaPipe et du modèle de détourage (une seule fois)…';
   if (depth.status === 'uploading') return 'Envoi de la vidéo au serveur de détourage…';
+  if (depth.status === 'running' && depth.kind === 'browser') return `Préparation de ta silhouette (MediaPipe, ${depth.delegate === 'GPU' ? 'carte graphique' : 'processeur'}) : image ${depth.done} / ${depth.total}. L'effet apparaît déjà sur les images prêtes.`;
   if (depth.status === 'running') return `Détourage en cours${depth.engine && depth.engine !== 'auto' ? ` (${depth.engine})` : ''} : image ${depth.done} / ${depth.total || '…'}${depth.log ? ` — ${depth.log}` : ''}`;
   if (depth.status === 'done') return depth.kind === 'browser'
-    ? `Détourage en direct dans le navigateur (MediaPipe, ${depth.delegate === 'GPU' ? 'accéléré par la carte graphique' : 'processeur'}). Le texte passe derrière toi.`
+    ? `Silhouette prête (MediaPipe dans le navigateur, ${depth.delegate === 'GPU' ? 'carte graphique' : 'processeur'}). Le texte passe derrière toi.`
     : `Silhouette prête (${depth.engine}). Le texte passe maintenant derrière toi.`;
   if (depth.status === 'error') return 'Détourage impossible : ' + depth.error;
   return '';
@@ -718,6 +719,10 @@ async function exportVideo() {
   const btn = $('exportBtn'), bar = $('bar'), status = $('status');
   btn.disabled = true;
   try {
+    if (S.depthOn && depth.kind === 'browser' && depth.status === 'running') {
+      status.textContent = 'Attente de la fin de la préparation de ta silhouette…';
+      await whenPrepared();
+    }
     await document.fonts.ready;
     let W = video.videoWidth, H = video.videoHeight;
     const k = 1920 / Math.max(W, H);
@@ -744,7 +749,7 @@ async function exportVideo() {
     const first = segs.find(([a]) => a <= .01);
     await seekTo(first ? first[1] : 0);
     lastT = video.currentTime - .01;
-    updateDepth(video, S.depthOn, true);
+    updateDepth(video, S.depthOn);
     render(ctx, W, H, video.currentTime, cfg);
 
     let finish;
@@ -761,12 +766,12 @@ async function exportVideo() {
         rec.pause(); video.pause();
         await seekTo(seg[1]);
         lastT = video.currentTime - .01;
-        updateDepth(video, S.depthOn, true);
+        updateDepth(video, S.depthOn);
         render(ctx, W, H, video.currentTime, cfg);
         rec.resume(); await video.play();
         busy = false;
       } else if (!busy) {
-        updateDepth(video, S.depthOn, true);
+        updateDepth(video, S.depthOn);
         render(ctx, W, H, t, cfg);
         tickSfx(cfg, t);
       }
