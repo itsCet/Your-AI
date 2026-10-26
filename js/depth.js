@@ -34,20 +34,21 @@ async function init(m, url) {
   const fileset = await FilesetResolver.forVisionTasks('${TASKS}/wasm');
   // MediaPipe charge son moteur WebAssembly avec importScripts(), absent des workers « module » :
   // on évalue nous-mêmes le chargeur dans la portée globale, puis on neutralise importScripts.
-  if (!self.ModuleFactory) {
-    const code = await (await fetch(fileset.wasmLoaderPath)).text();
-    (0, eval)(code + '\\nself.ModuleFactory = ModuleFactory;');
-  }
+  // Le chargeur est consommé à chaque création : on le réinjecte avant chacune.
+  const loader = await (await fetch(fileset.wasmLoaderPath)).text();
   self.importScripts = () => {};
-  const make = delegate => ImageSegmenter.createFromOptions(fileset, {
-    baseOptions: { modelAssetPath: url, delegate },
-    runningMode: 'VIDEO', outputConfidenceMasks: true, outputCategoryMask: false,
-  });
+  const make = delegate => {
+    if (!self.ModuleFactory) (0, eval)(loader + '\\nself.ModuleFactory = ModuleFactory;');
+    return ImageSegmenter.createFromOptions(fileset, {
+      baseOptions: { modelAssetPath: url, delegate },
+      runningMode: 'VIDEO', outputConfidenceMasks: true, outputCategoryMask: false,
+    });
+  };
   // Certains navigateurs annoncent un GPU qui n'est qu'une émulation très lente :
-  // on chronomètre GPU et processeur et on garde le plus rapide.
+  // on chronomètre GPU et processeur (lecture du masque comprise, c'est elle qui coûte) et on garde le plus rapide.
   const probe = new OffscreenCanvas(${MASK_WIDTH}, ${Math.round(MASK_WIDTH * 16 / 9)});
   probe.getContext('2d').fillRect(0, 0, probe.width, probe.height);
-  const bench = s => { let best = Infinity; for (let i = 0; i < 3; i++) { const t0 = performance.now(); const r = s.segmentForVideo(probe, ++ts); r.close && r.close(); best = Math.min(best, performance.now() - t0); } return best; };
+  const bench = s => { let best = Infinity; for (let i = 0; i < 3; i++) { const t0 = performance.now(); const r = s.segmentForVideo(probe, ++ts); r.confidenceMasks[0].getAsFloat32Array(); r.close && r.close(); best = Math.min(best, performance.now() - t0); } return best; };
   if (seg) { seg.close(); seg = null; }
   let gpu = null, gpuMs = Infinity, delegate = 'GPU';
   try { gpu = await make('GPU'); bench(gpu); gpuMs = bench(gpu); } catch (e) { gpu = null; }
@@ -72,7 +73,9 @@ self.onmessage = async ({ data }) => {
       for (let k = 0; k < f.length; k++) {
         const p = bg ? 1 - f[k] : f[k];
         prev[k] = data.first ? p : prev[k] * .3 + p * .7; // lissage temporel léger (anti-scintillement)
-        out[k] = prev[k] * 255;
+        // Courbe de contraste : le fond résiduel (< 15 %) devient transparent, la personne opaque.
+        const a = (prev[k] - .15) / .7;
+        out[k] = a <= 0 ? 0 : a >= 1 ? 255 : a * a * (3 - 2 * a) * 255;
       }
       res.close && res.close(); data.bitmap.close();
       self.postMessage({ type: 'mask', id: data.id, data: out }, [out.buffer]);
