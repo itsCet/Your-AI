@@ -14,7 +14,7 @@ const STEPS = [
   ['font', 'Police', 'Choisis la police.', 'Chaque aperçu est dessiné en direct sur ta vidéo.'],
   ['colors', 'Couleurs', 'Choisis tes couleurs.', 'L\'accent sert aux titres, cartes, motions et sous-titres.'],
   ['title', 'Titre', 'Choisis le style de titre.', 'Dessiné en direct dans tes couleurs et ta police.'],
-  ['motions', 'Motions', 'Garde, mets de côté ou jette chaque élément.', 'Laisse une note sur ce qui marche ou ce qu\'il faut changer : elle part dans ton brief.'],
+  ['motions', 'Motions', 'Choisis les animations.', 'Chacune illustre ce que tu dis à un moment précis de ta vidéo. Clique sur une carte pour l\'ajouter.'],
   ['captions', 'Sous-titres', 'Sous-titres.', 'Générés depuis ta voix, mot à mot. Corrige le texte si besoin.'],
   ['export', 'Export', 'Coupes, sons, timing & export.', 'Supprime les blancs, règle les sons, puis exporte la vidéo et sa couverture.'],
 ];
