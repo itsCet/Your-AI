@@ -1,43 +1,42 @@
-// Génère des propositions de montage complètes à partir de l'analyse de la vidéo :
-// hook tiré de la transcription, motions placées sur les phrases, les chiffres,
-// les questions et les temps forts de la voix.
-import { M, FONTS, PALETTES, TITLES, CAPTION_STYLES, clamp } from './render.js';
-import { sentences } from './analyze.js';
+// Propositions de montage construites à partir de ce qui est dit dans la vidéo.
+// Chaque modèle définit un STYLE (police, couleurs, titre, sous-titres, effets) et une manière
+// de traduire les moments repérés par semantics.js en motions. Aucun texte n'est inventé :
+// tout vient de la transcription (chiffres, listes, questions, oppositions, mots forts…).
+import { M, FONTS, PALETTES, TITLES, CAPTION_STYLES } from './render.js';
+import { motionText, itemTimes, TOPIC_PALETTE } from './semantics.js';
 
-// Chaque modèle reprend la « personnalité » d'un style de montage repéré dans des reels de référence.
+// prefer : motion choisie pour chaque type de moment (absent = ce montage ignore ce type).
+// density : nombre de motions visé par tranche de 10 s. zoom : punch-in sur les temps forts.
 const TEMPLATES = [
-  { name: 'Story doré', inspo: 'Cartes lumineuses, chiffres, checklist, sous-titres serif dorés',
-    font: 'Archivo Black', pal: 6, title: 'editorial', captions: 'editorial', cuts: true, hook: 'first', media: 'card',
-    recipe: ['statcard', 'stamp:peak', 'recframe:.45', 'focus:peak2', 'typing', 'zoom:peaks:2'], stamp: '100% vrai' },
-  { name: 'Ciné cuivré', inspo: 'Plein écran chaud et granuleux, BAM sur le rythme, crochets dorés',
-    font: 'Inter Extra Bold', pal: 8, title: 'stack', captions: 'brackets', cuts: true, hook: 'peak', media: 'full',
-    recipe: ['name', 'kinetic:.35', 'beat:peak', 'spotlight:peak2', 'bigword:.75'] },
-  { name: 'Studio crème', inspo: 'Écran partagé, stickers blancs, texte tapé, serif italique',
-    font: 'Instrument Serif', pal: 7, title: 'sticker', captions: 'mixte', cuts: true, hook: 'first', media: 'split',
-    recipe: ['numbers', 'prompt:.55', 'comment', 'zoom:peaks:1'] },
-  { name: 'Zéro montage', inspo: 'Note manuscrite, carte couleur, tampon « 1 prise »',
-    font: 'Playfair italique', pal: 0, title: 'editorial', captions: 'box', cuts: true, hook: 'question', media: 'sticker',
-    recipe: ['note:.3', 'colorcard:.55', 'stamp:peak', 'zoom:every'], stamp: '1 prise' },
-  { name: 'Rose tag', inspo: 'Titre en étiquettes roses, incrustations, word pop',
-    font: 'Inter Extra Bold', pal: 9, title: 'highlight', captions: 'pop', cuts: true, hook: 'question', media: 'pip',
-    recipe: ['words:.5', 'comment', 'zoom:peaks:2', 'shrink:end'], cta: 'Abonne-toi' },
-  { name: 'Viral punchy', inspo: 'Tuiles, zooms, orbit de photos, carte de fin',
-    font: 'Anton', pal: 0, title: 'tiles', captions: 'pop', cuts: true, hook: 'first', media: 'card',
-    recipe: ['zoom:peaks:3', 'counter', 'comment', 'orbit:.55', 'shrink:end'], cta: 'Abonne-toi' },
-  { name: 'Clean pro', inspo: 'Sobre : bandeau, lower third, carousel',
-    font: 'Inter Extra Bold', pal: 5, title: 'banner', captions: 'band', cuts: true, hook: 'first', media: 'split',
-    recipe: ['lower', 'carousel:.5', 'zoom:peaks:1', 'shrink:end'], cta: 'Suis-moi pour la suite' },
-  { name: 'Minimal', inspo: 'Juste des sous-titres et un zoom',
-    font: 'Space Mono', pal: 3, title: 'type', captions: 'box', cuts: true, hook: 'first', media: 'pip',
-    recipe: ['zoom:peaks:2'] },
+  { name: 'Sur mesure', inspo: 'Couleurs adaptées au sujet de ta vidéo, une animation pour chaque idée forte',
+    fx: { pop: true, slide: true, glow: false }, font: 'Archivo Black', pal: 'topic', title: 'editorial', captions: 'editorial', media: 'card', density: 1.6, zoom: 2,
+    prefer: { list: 'checklist', number: 'statcard', contrast: 'versus', emoji: 'emoji', question: 'prompt', punch: 'kinetic', keyword: 'words', stamp: 'stamp', unique: 'grid' } },
+  { name: 'Derrière toi', depth: true, inspo: 'Les mots clés passent en géant derrière ta tête, néon cyan',
+    fx: { pop: true, slide: true, glow: true, glowColor: '#00E5FF' }, font: 'Anton', pal: 5, title: 'depth', captions: 'brackets', media: 'card', density: 1.2, zoom: 1,
+    prefer: { punch: 'beat', keyword: 'words', number: 'counter', list: 'checklist', contrast: 'versus' } },
+  { name: 'Story doré', inspo: 'Cartes lumineuses pour les chiffres et les listes, mot clé en serif doré',
+    fx: { pop: true, slide: true, glow: true, glowColor: 'accent' }, font: 'Archivo Black', pal: 6, title: 'editorial', captions: 'editorial', media: 'card', density: 1.3, zoom: 2,
+    prefer: { number: 'statcard', list: 'checklist', contrast: 'versus', unique: 'grid', stamp: 'stamp', question: 'prompt', punch: 'kinetic' } },
+  { name: 'Ciné cuivré', inspo: 'Phrases fortes en plein écran chaud et granuleux, crochets dorés',
+    fx: { pop: true, slide: false, glow: true, glowColor: 'accent' }, font: 'Inter Extra Bold', pal: 8, title: 'stack', captions: 'brackets', media: 'full', density: 1, zoom: 1,
+    prefer: { punch: 'kinetic', keyword: 'bigword', number: 'counter', list: 'numbers' } },
+  { name: 'Studio crème', inspo: 'Écran partagé, stickers, emoji sur les objets dont tu parles',
+    fx: { pop: false, slide: true, glow: false }, font: 'Instrument Serif', pal: 7, title: 'sticker', captions: 'mixte', media: 'split', density: 1.4, zoom: 1,
+    prefer: { emoji: 'emoji', list: 'checklist', question: 'prompt', contrast: 'versus', number: 'counter' } },
+  { name: 'Rose tag', inspo: 'Titre en étiquettes roses, mots clés qui claquent',
+    fx: { pop: true, slide: true, glow: true, glowColor: '#FF3DCB' }, font: 'Inter Extra Bold', pal: 9, title: 'highlight', captions: 'pop', media: 'pip', density: 1.3, zoom: 2,
+    prefer: { keyword: 'words', emoji: 'emoji', question: 'comment', stamp: 'stamp', number: 'counter' } },
+  { name: 'Clean pro', inspo: 'Sobre : listes et chiffres seulement, bandeau de sous-titres',
+    fx: { pop: false, slide: true, glow: false }, font: 'Inter Extra Bold', pal: 5, title: 'banner', captions: 'band', media: 'split', density: .7, zoom: 1,
+    prefer: { list: 'checklist', number: 'statcard', contrast: 'versus' } },
+  { name: 'Minimal', inspo: 'Juste des sous-titres et un zoom sur les temps forts',
+    fx: { pop: false, slide: false, glow: false }, font: 'Space Mono', pal: 3, title: 'type', captions: 'box', media: 'pip', density: 0, zoom: 2, prefer: {} },
 ];
 
 const FALLBACK_HOOKS = [
   ['Écoute', "ça jusqu'au bout"], ['Stop', 'fais plutôt ça'], ['Le secret', 'que personne ne dit'],
-  ['Attends', 'regarde ça'], ['Personne', 'ne parle de ça'], ['Vrai', 'ou faux ?'],
+  ['Attends', 'regarde ça'], ['Personne', 'ne parle de ça'], ['Vrai', 'ou faux ?'], ['Regarde', 'bien ça'], ['Voilà', 'comment faire'],
 ];
-const FALLBACK_COMMENTS = ['Tellement vrai, merci pour ce conseil !', 'Je ne savais pas ça du tout', 'Tu peux faire une partie 2 ?'];
-const CTAS = ['Abonne-toi', 'Suis-moi pour la suite', 'Enregistre pour plus tard', 'Partie 2 ?'];
 
 function rng(seed) {
   let a = seed >>> 0;
@@ -45,7 +44,6 @@ function rng(seed) {
 }
 const pick = (r, arr) => arr[Math.floor(r() * arr.length)];
 const clean = w => w.replace(/[.,!?;:«»"“”()]/g, '');
-
 const FILLERS = new Set(['and', 'so', 'um', 'uh', 'well', 'like', 'okay', 'ok', 'but', 'et', 'alors', 'donc', 'euh', 'bon', 'bah', 'ben', 'mais', 'voilà', 'bref', 'du', 'coup']);
 
 function hookFrom(sents, mode, peaks, fallback, used) {
@@ -67,130 +65,58 @@ function hookFrom(sents, mode, peaks, fallback, used) {
   return { l1: fallback[0], l2: fallback[1] };
 }
 
-// Premier nombre prononcé, avec le mot qui le suit (« 10 000 abonnés »).
-function findNumber(words) {
-  for (let i = 0; i < words.length; i++) {
-    if (!/\d/.test(words[i].w)) continue;
-    let num = clean(words[i].w).replace(/\D/g, ''), j = i + 1;
-    while (j < words.length && /^\d{3}[.,]?$/.test(words[j].w)) { num += words[j].w.replace(/\D/g, ''); j++; }
-    const unit = j < words.length && /^[\p{L}%€$]+$/u.test(clean(words[j].w)) ? ' ' + clean(words[j].w) : '';
-    if (+num > 0) return { t: words[i].s, text: num + unit };
-  }
-  return null;
+// Transforme un moment en motion placée dans le temps (le texte vient du moment).
+export function motionFromMoment(m, type, variant = 0) {
+  const lead = type === 'checklist' || type === 'statcard' || type === 'versus' ? .35 : .15;
+  const start = Math.max(0, +(m.t - lead).toFixed(2));
+  const base = M[type].dur;
+  // La motion dure le temps de l'idée (une liste reste jusqu'à son dernier élément).
+  const dur = type === 'checklist' ? Math.min(12, Math.max(base, m.end - start + 1.2))
+    : type === 'kinetic' || type === 'versus' ? Math.min(6, Math.max(base, m.end - start + .6)) : base;
+  const out = { type, variant, start, dur: +dur.toFixed(2), text: motionText(m, type), momentId: m.id };
+  if (type === 'checklist') out.times = itemTimes(m, start);
+  if (type === 'versus' && m.turn != null) out.turn = m.turn + (m.t - start);
+  return out;
 }
 
-// Mots du début de la phrase avant un nombre (« j'ai fait courir » 40 personnes).
-function beforeNumber(sents, t) {
-  const s = sents.find(x => t >= x.s - .01 && t <= x.e + .01);
-  if (!s) return '';
-  const i = s.words.findIndex(w => w.s >= t - .01);
-  return s.words.slice(Math.max(0, i - 3), i).map(w => clean(w.w)).join(' ');
-}
-const near = (list, target) => [...list].sort((a, b) => Math.abs(a.s - target) - Math.abs(b.s - target))[0];
-
-function keyWords(sent) {
-  const ws = sent.words.map(w => clean(w.w)).filter(w => w.length >= 4);
-  const top = new Set([...ws].sort((a, b) => b.length - a.length).slice(0, 4));
-  return ws.filter(w => top.has(w)).slice(0, 4).join(' ');
-}
-
-// A = analyse { duration, words, peaks }, media = médias déjà placés [{ start, dur }] (le temps qu'ils occupent est réservé).
+// A = { duration, words, peaks, sentences, moments, topic }, media = médias placés [{ start, dur }].
 export function makeProposals(A, seed = 0, media = []) {
   const r = rng(seed * 7919 + 1);
   const duration = A.duration || 30;
-  const words = A.words || [];
-  const sents = sentences(words);
+  const sents = A.sentences || [];
   const peaks = A.peaks || [];
+  const moments = A.moments || [];
   const titleDur = 3;
   const usedHooks = new Set();
 
   return TEMPLATES.map((T, ti) => {
     const t = { ...T };
     if (seed) {
-      t.font = pick(r, FONTS).name; t.pal = Math.floor(r() * PALETTES.length);
+      t.font = pick(r, FONTS).name; t.pal = pick(r, ['topic', ...PALETTES.keys()]);
       t.title = pick(r, TITLES).id; t.captions = pick(r, CAPTION_STYLES).id;
-      t.hook = pick(r, ['first', 'question', 'peak']); t.cta = pick(r, CTAS);
     }
+    const pal = t.pal === 'topic' ? (TOPIC_PALETTE[A.topic] ?? 0) : t.pal;
     const used = media.map(m => [m.start, m.start + m.dur]);
-    const free = (a, b) => a >= titleDur && b <= duration - .1 && used.every(([x, y]) => b <= x || a >= y);
-    const anchors = (sents.length ? sents.map(s => s.s) : []).concat(
-      Array.from({ length: Math.ceil(duration) }, (_, i) => i)).filter(a => a >= titleDur);
+    const free = (a, b) => a >= titleDur && b <= duration - .1 && used.every(([x, y]) => b <= x - .3 || a >= y + .3);
     const motions = [];
-    const place = (type, prefer, extra = {}) => {
-      const dur = extra.dur ?? M[type].dur;
-      const cand = anchors.concat([prefer]).map(a => Math.max(titleDur, a - .15)).sort((a, b) => Math.abs(a - prefer) - Math.abs(b - prefer));
-      const at = cand.find(a => free(a, a + dur));
-      if (at == null) return;
-      used.push([at, at + dur]);
-      motions.push({ type, variant: seed ? Math.floor(r() * 3) : ti % 2, start: +at.toFixed(2), dur, text: M[type].text, ...extra });
-    };
-    const peakAt = arg => arg === 'peak2' ? (peaks[1] ?? peaks[0]) : arg === 'peak' ? peaks[0] : null;
-    const at = arg => peakAt(arg) ?? duration * (+arg || .5);
-    const sentNear = (arg, min = 3, max = 99) => near(sents.filter(x => x.words.length >= min && x.words.length <= max), at(arg));
-
-    for (const item of t.recipe) {
-      const [type, arg, n] = item.split(':');
-      if (type === 'zoom') {
-        const times = arg === 'every' ? (sents.length ? sents.map(s => s.s) : anchors.filter((_, i) => i % 5 === 0)).filter((x, i, a) => i === 0 || x - a[i - 1] >= 4)
-          : peaks.slice(0, +n || 2);
-        for (const z of times) if (z >= titleDur && z + M.zoom.dur < duration) motions.push({ type: 'zoom', variant: 0, start: +z.toFixed(2), dur: M.zoom.dur });
-      } else if (type === 'counter') {
-        const num = findNumber(words);
-        if (num) place('counter', num.t, { text: num.text });
-      } else if (type === 'statcard') {
-        const num = findNumber(words);
-        if (num) {
-          const [value, ...unit] = num.text.split(' ');
-          place('statcard', num.t - .3, { text: `${beforeNumber(sents, num.t) || 'Le chiffre'}|${value}+|${unit.join(' ') || 'au total'}` });
-        }
-      } else if (type === 'comment') {
-        const q = sents.find((s, i) => i > 0 && s.text.trim().endsWith('?'));
-        const text = q ? q.text.slice(0, 90) : sents.length ? null : pick(r, FALLBACK_COMMENTS);
-        if (text) place('comment', q ? q.s : duration * .45, { text });
-      } else if (type === 'words') {
-        const s = sentNear(arg);
-        const text = s && keyWords(s);
-        if (text) place('words', s.s, { text });
-      } else if (type === 'shrink') {
-        const last = sents.length ? sents[sents.length - 1].s : duration - M.shrink.dur - .3;
-        place('shrink', Math.min(last, duration - M.shrink.dur - .2), { text: t.cta || 'Abonne-toi' });
-      } else if (type === 'lower' || type === 'name') {
-        place(type, titleDur + .2);
-      } else if (type === 'stamp') {
-        place('stamp', at(arg), { text: t.stamp || '100% vrai' });
-      } else if (type === 'typing') {
-        const s = sents.find((x, i) => i > 0 && x.s - sents[i - 1].e >= .5);
-        if (s) place('typing', s.s - M.typing.dur);
-      } else if (type === 'numbers') {
-        const w = words.find(x => /^(premi|deuxi|troisi|[ée]tape|step|first|second|third)/i.test(x.w));
-        if (w) place('numbers', w.s);
-      } else if (type === 'prompt') {
-        const s = sentNear(arg, 3, 7);
-        if (s) place('prompt', s.s, { text: s.text });
-      } else if (type === 'kinetic') {
-        const s = sentNear(arg, 3, 7);
-        if (s) place('kinetic', s.s, { text: s.text, dur: clamp(s.e - s.s + .6, 1.8, 4) });
-      } else if (type === 'note' || type === 'colorcard') {
-        const s = sentNear(arg);
-        const text = s && keyWords(s).split(' ').slice(0, type === 'note' ? 3 : 2).join(' ').toLowerCase();
-        if (text) place(type, s.s, { text });
-      } else if (type === 'beat') {
-        const s = sentNear(arg);
-        const text = s && keyWords(s).split(' ').slice(0, 3).join(' ');
-        if (text) place('beat', at(arg), { text: text.toUpperCase() });
-      } else if (type === 'bigword') {
-        const s = sentNear(arg);
-        const text = s && keyWords(s).split(' ').sort((a, b) => b.length - a.length)[0];
-        if (text) place('bigword', s.s, { text: text.toLowerCase() });
-      } else {
-        place(type, at(arg));
-      }
+    // Les moments les plus parlants d'abord, dans la limite de la densité du modèle.
+    const budget = Math.round(t.density * duration / 10);
+    const ranked = moments.filter(m => t.prefer[m.kind]).map(m => ({ m, s: m.score + r() * (seed ? 3 : .5) })).sort((a, b) => b.s - a.s);
+    for (const { m } of ranked) {
+      if (motions.length >= budget) break;
+      const mo = motionFromMoment(m, t.prefer[m.kind], seed ? Math.floor(r() * 2) : ti % 2);
+      if (!free(mo.start, mo.start + mo.dur)) continue;
+      used.push([mo.start, mo.start + mo.dur]);
+      motions.push(mo);
+    }
+    for (const z of peaks.slice(0, t.zoom)) {
+      if (z >= titleDur && z + M.zoom.dur < duration) motions.push({ type: 'zoom', variant: 0, start: +z.toFixed(2), dur: M.zoom.dur });
     }
     motions.sort((a, b) => a.start - b.start);
     return {
-      name: T.name, inspo: T.inspo, font: t.font, pal: t.pal, title: t.title, titleDur, captions: t.captions, cuts: t.cuts,
-      mediaLayout: T.media,
-      hook: hookFrom(sents, t.hook, peaks, FALLBACK_HOOKS[(ti + seed) % FALLBACK_HOOKS.length], usedHooks),
+      name: T.name, inspo: T.inspo, fx: { ...T.fx }, depth: !!T.depth, font: t.font, pal, title: t.title, titleDur,
+      captions: t.captions, cuts: true, mediaLayout: T.media,
+      hook: hookFrom(sents, ti % 3 === 1 ? 'question' : ti % 3 === 2 ? 'peak' : 'first', peaks, FALLBACK_HOOKS[(ti + seed) % FALLBACK_HOOKS.length], usedHooks),
       motions,
     };
   });

@@ -8,7 +8,7 @@ export const DEFAULT_SFX = {
   statcard: 'whoosh', checklist: 'click', progress: 'whoosh', grid: 'ding', counter: 'click', lower: 'whoosh', comment: 'pop',
   name: 'whoosh', prompt: 'type', stamp: 'bam', note: 'pop', colorcard: 'pop', numbers: 'pop', typing: 'pop', words: 'pop',
   beat: 'bam', countdown: 'click', kinetic: 'type', bigword: 'whoosh', spotlight: '', recframe: 'click', focus: 'click',
-  zoom: 'whoosh', orbit: 'whoosh', carousel: 'whoosh', shrink: 'whoosh', media: 'pop', title: 'whoosh',
+  emoji: 'pop', versus: 'whoosh', zoom: 'whoosh', orbit: 'whoosh', carousel: 'whoosh', shrink: 'whoosh', media: 'pop', title: 'whoosh',
 };
 
 // Liste des sons d'un élément, en secondes depuis son début (certains sons se répètent).
@@ -22,7 +22,12 @@ export function sfxEvents(item) {
     case 'kinetic': return repeat(Math.max(1, words.length), item.dur * .7);
     case 'countdown': return repeat(Math.max(1, parseInt(item.text, 10) || 3), item.dur);
     case 'numbers': return repeat(Math.max(1, parseInt(item.text, 10) || 3), item.dur * .5);
-    case 'checklist': return Array.from({ length: Math.max(1, String(item.text).split('|').length - 1) }, (_, i, a) => ({ t: item.dur * (.1 + i * .6 / a.length), kind }));
+    case 'checklist': {
+      // Un clic par ligne cochée, au moment où elle apparaît.
+      if (item.times?.length) return item.times.map(t => ({ t, kind }));
+      const n = Math.max(1, String(item.text).split('|').length - 1);
+      return Array.from({ length: n }, (_, i) => ({ t: item.dur * (.1 + i * .6 / n), kind }));
+    }
     case 'prompt': return repeat(Math.min(14, Math.max(1, String(item.text).length)), item.dur * .55).map(e => ({ ...e, t: e.t + item.dur * .08 }));
     default: return [{ t: 0, kind }];
   }
