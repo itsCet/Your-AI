@@ -7,11 +7,12 @@
 import { render, setVideo, lookContext } from './render.js';
 import { fstr, clamp, PALETTES } from './kit.js';
 import { FONT_PAIRS, HOOK_STYLES, CAPTION_STYLES, ELEMENTS, MOTIONS, CATALOG, PRESETS, DEFAULT_LOOK } from './look.js';
-import { decodeAudio, loudness, findSilences, cutsFromSilences, findPeaks, transcribe, cancelTranscription, chunkWords } from './analyze.js';
+import { decodeAudio, loudness, findPeaks, transcribe, cancelTranscription, chunkWords } from './analyze.js';
 import { autoPlan, itemFromMoment, claudePrompt, parsePlan, planToItems, hookFrom, wordIndexAt } from './plan.js';
 import { MEDIA_LAYOUTS, POSITIONS, interpretMedia, hasAlpha } from './media.js';
 import { SFX, DEFAULT_SFX, sfxEvents, playSfx, loadSfxLibrary } from './sfx.js';
 import { TRANSITIONS, TRANS_STYLES, TRANS_SFX, planTransitions, transName } from './transitions.js';
+import { RHYTHMS, rhythmOf, pauseCuts, wordCuts, cleanupSummary } from './cleanup.js';
 import { depth, BROWSER_MODELS, startBrowserMatting, startServerMatting, resetMatting, updateDepth, whenPrepared } from './depth.js';
 
 const LANGS = [['fr', 'Français'], ['en', 'Anglais'], ['es', 'Espagnol'], ['de', 'Allemand'], ['it', 'Italien'], ['pt', 'Portugais'], ['ar', 'Arabe'], ['', 'Détection auto']];
@@ -29,7 +30,7 @@ const S = {
   look: { ...DEFAULT_LOOK }, hook: { l1: 'Ton accroche', l2: 'en deux lignes' }, titleDur: 3,
   items: [], media: [], photos: [], sample: null,
   captions: { on: true, pos: .72 },
-  cuts: { on: true, sens: .3, minLen: .55, segs: [] }, cutSegs: [], transOver: {},
+  cuts: { on: true, sens: .3, rhythm: 'balanced', segs: [], lowRange: false, clean: { fillers: true, hedges: false, repeats: true, retakes: true } }, cutSegs: [], transOver: {},
   sfx: { on: true, vol: .6 }, depthOn: false, depthEngine: 'browser:multiclass',
   sel: null, lastWord: 0, dict: loadDict(),
   uid: 1, server: { ffmpeg: false, matting: [] }, exporting: false,
@@ -84,7 +85,42 @@ const cutSaving = () => S.cutSegs.reduce((a, [x, y]) => a + (y - x), 0);
 
 function recomputeSilences() {
   if (!S.A.db) { S.cuts.segs = []; return; }
-  S.cuts.segs = cutsFromSilences(findSilences(S.A.db, S.cuts.sens, S.cuts.minLen), S.A.duration);
+  const r = pauseCuts(S.A.db, S.A.duration, S.cuts.rhythm, S.cuts.sens);
+  S.cuts.segs = r.segs; S.cuts.lowRange = r.lowRange;
+}
+
+// Nettoyage : hésitations, tics, répétitions, reprises (mots barrés avec la raison, rétablissables).
+// Les mots que tu as coupés ou rétablis à la main ne sont pas touchés.
+function applyCleanup() {
+  for (const w of S.words) if (w.cutWhy) { w.cut = false; w.cutWhy = null; }
+  const free = S.words.map(w => !w.cut && !w.manual);
+  for (const { a, b, why } of wordCuts(S.words, S.cuts.clean)) {
+    if (S.words.slice(a, b + 1).every((_, k) => free[a + k])) for (let i = a; i <= b; i++) { S.words[i].cut = true; S.words[i].cutWhy = why; }
+  }
+  refreshDerived();
+}
+function cleanupPanel(after = draw) {
+  const sum = cleanupSummary(S.A.duration, S.cutSegs, S.words);
+  const c = S.cuts.clean;
+  const opt = (k, label) => el('label', {}, el('input', { type: 'checkbox', checked: c[k], onchange: e => { S.cuts.clean = { ...c, [k]: e.target.checked }; applyCleanup(); after(); } }), label);
+  const whyTxt = Object.entries(sum.why).map(([k, n]) => `${n} ${k}`).join(' · ');
+  return el('div', { class: 'panel' }, el('h2', {}, 'Nettoyage et rythme'),
+    el('div', { class: 'chips-row', style: 'margin-bottom:6px' }, el('span', { class: 'muted' }, 'Rythme :'),
+      ...RHYTHMS.map(r => el('button', { class: 'chip-btn' + (S.cuts.rhythm === r.id ? ' on' : ''), title: r.desc, onclick: () => {
+        S.cuts.rhythm = r.id; S.cuts.on = true; S.cuts.clean = { ...S.cuts.clean, hedges: r.hedges }; recomputeSilences(); applyCleanup(); after();
+      } }, r.name))),
+    el('p', { class: 'muted', style: 'margin:0 0 6px' }, rhythmOf(S.cuts.rhythm).desc + '.'),
+    el('div', { class: 'options' },
+      el('label', {}, el('input', { type: 'checkbox', checked: S.cuts.on, onchange: e => { S.cuts.on = e.target.checked; refreshDerived(); after(); } }), 'Raccourcir les blancs'),
+      opt('fillers', 'Hésitations (euh, hum, bah)'),
+      opt('hedges', 'Tics de langage (en fait, du coup, genre, tu vois…)'),
+      opt('repeats', 'Répétitions et faux départs'),
+      opt('retakes', 'Reprises (garder la dernière prise)')),
+    S.A.db ? el('div', { class: 'options' }, el('label', {}, 'Sensibilité aux blancs', el('input', { type: 'range', min: '0.1', max: '0.6', step: '0.02', value: S.cuts.sens,
+      onchange: e => { S.cuts.sens = +e.target.value; recomputeSilences(); refreshDerived(); after(); } }))) : null,
+    S.cuts.lowRange ? el('p', { class: 'err' }, 'Micro bruyant : la voix et le silence sont trop proches pour bien repérer les blancs. Vérifie les coupes en lecture.') : null,
+    el('p', {}, `${fmt(sum.before)} → `, el('b', {}, fmt(sum.after)), ` (−${Math.round(sum.pct * 100)} %) · ${sum.plans} plans, ${sum.median.toFixed(1)} s en médiane`),
+    el('p', { class: 'muted', style: 'margin:0' }, (whyTxt ? 'Mots coupés : ' + whyTxt + '. ' : '') + 'Ils sont barrés dans l\'Édition (la raison s\'affiche au survol) ; clique dessus pour les rétablir.'));
 }
 
 // ---------- Médias ----------
@@ -325,6 +361,7 @@ async function loadFile(file) {
     // Les mots éditables, avec les corrections déjà retenues dans le dictionnaire.
     S.words = A.words.map(w => { const fix = S.dict[keyW(w.w)]; return { ...w, w: fix ? withCore(w.w, fix) : w.w, orig: w.w, fixed: !!fix }; });
     setProgress('Montage automatique…', .98);
+    applyCleanup();
     replan(true);
     await captureStills();
     A.status = 'done';
@@ -536,6 +573,7 @@ function editTab(C) {
     el('button', { class: 'btn', onclick: copyForClaude }, '📋 Copier pour Claude'),
     el('button', { class: 'btn', onclick: importPlanModal }, '📥 Importer un plan'),
     el('button', { class: 'btn', onclick: () => { replan(); draw(); } }, '↻ Montage auto'),
+    el('button', { class: 'btn', onclick: cleanupModal }, '✂ Nettoyage'),
     el('button', { class: 'btn', onclick: dictModal }, `📖 Dictionnaire (${Object.keys(S.dict).length})`),
     el('span', { class: 'muted', style: 'margin-left:auto' }, `${S.items.length} animation(s) · ${S.words.filter(w => w.cut).length} mot(s) coupé(s)`)));
   C.append(el('div', { class: 'options' },
@@ -610,7 +648,7 @@ function doc() {
       const inSel = S.sel?.kind === 'words' && i >= S.sel.a && i <= S.sel.b;
       const inRange = selItem && w.s >= selItem.start - .05 && w.s <= selItem.start + selItem.dur;
       p.append(el('span', { class: 'wd' + (w.cut ? ' cut' : '') + (w.fixed ? ' fixed' : '') + (inSel ? ' sel' : '') + (inRange ? ' inrange' : ''), 'data-i': i,
-        style: inRange ? `--chip:${CHIP_COLORS[selItem.type]}` : null, title: w.fixed ? `Transcrit : « ${w.orig} »` : null }, w.w), ' ');
+        style: inRange ? `--chip:${CHIP_COLORS[selItem.type]}` : null, title: w.cutWhy ? `Coupé : ${w.cutWhy} (clique pour rétablir)` : w.fixed ? `Transcrit : « ${w.orig} »` : null }, w.w), ' ');
     }
     d.append(p);
   }
@@ -695,7 +733,7 @@ function inspector() {
     const types = [...(S.look.elements || []), ...(S.look.motion || [])];
     const rest = Object.keys(CATALOG).filter(k => !types.includes(k));
     box.append(el('div', { class: 'row-btns' },
-      el('button', { class: 'btn small' + (allCut ? '' : ' danger'), onclick: () => { S.words.slice(a, b + 1).forEach(x => { x.cut = !allCut; }); refreshDerived(); draw(); } },
+      el('button', { class: 'btn small' + (allCut ? '' : ' danger'), onclick: () => { S.words.slice(a, b + 1).forEach(x => { x.cut = !allCut; x.cutWhy = null; x.manual = true; }); refreshDerived(); draw(); } },
         allCut ? '↺ Rétablir' : '✂ Couper ' + (one ? 'ce mot' : 'ces mots')),
       select([['', '+ Ajouter une animation ici…'], ...types.map(k => [k, CATALOG[k].name]), ...rest.map(k => [k, CATALOG[k].name + ' (hors look)'])], '', v => {
         if (!v) return;
@@ -822,7 +860,7 @@ function importPlanModal() {
       const r = planToItems(parsePlan(ta.value), S.words, S.uid);
       S.uid += r.items.length + 1;
       for (const c of r.corrections) if (S.words[c.i] && c.w) { S.words[c.i].w = c.w; S.words[c.i].fixed = keyW(S.words[c.i].orig) !== keyW(c.w); }
-      for (const [a, b] of r.cuts) for (let i = a; i <= b && i < S.words.length; i++) if (S.words[i]) S.words[i].cut = true;
+      for (const [a, b] of r.cuts) for (let i = a; i <= b && i < S.words.length; i++) if (S.words[i]) Object.assign(S.words[i], { cut: true, cutWhy: null, manual: true });
       if (r.hook?.l1) S.hook = { l1: r.hook.l1, l2: r.hook.l2 || '' };
       refreshDerived();
       // Transitions demandées : posées sur la coupe la plus proche du mot indiqué.
@@ -837,6 +875,12 @@ function importPlanModal() {
     } catch (err) { msg.className = 'err'; msg.textContent = 'Plan illisible : ' + err.message; }
   } }, 'Importer'));
 }
+function cleanupModal() {
+  let cur;
+  const after = () => { draw(); const np = cleanupPanel(after); cur.replaceWith(np); cur = np; };
+  cur = cleanupPanel(after);
+  modal('Nettoyage et rythme', cur);
+}
 function dictModal() {
   const rows = Object.entries(S.dict);
   modal('Dictionnaire de corrections', el('p', { class: 'muted' }, 'Ces corrections sont appliquées automatiquement à chaque nouvelle transcription.'),
@@ -847,14 +891,7 @@ function dictModal() {
 // ---------- Onglet Revue ----------
 function reviewTab(C) {
   C.append(el('p', { class: 'lead' }, el('b', {}, 'Revue. '), 'Regarde le résultat à gauche, règle les derniers détails et exporte.'));
-  C.append(el('div', { class: 'panel' }, el('h2', {}, 'Couper les blancs'),
-    S.A.db ? el('div', {},
-      el('div', { class: 'options' },
-        el('label', {}, el('input', { type: 'checkbox', checked: S.cuts.on, onchange: e => { S.cuts.on = e.target.checked; refreshDerived(); draw(); } }), 'Supprimer les blancs automatiquement'),
-        el('label', {}, 'Sensibilité', el('input', { type: 'range', min: '0.1', max: '0.6', step: '0.02', value: S.cuts.sens, onchange: e => { S.cuts.sens = +e.target.value; recomputeSilences(); refreshDerived(); draw(); } })),
-        el('label', {}, 'Blanc minimum', el('input', { type: 'range', min: '0.25', max: '1.5', step: '0.05', value: S.cuts.minLen, onchange: e => { S.cuts.minLen = +e.target.value; recomputeSilences(); refreshDerived(); draw(); } }))),
-      el('p', { class: 'muted' }, `Au total (blancs + mots barrés dans l'Édition) : −${cutSaving().toFixed(1)} s → ${fmt(S.A.duration - cutSaving())} au final.`))
-      : el('p', { class: 'muted' }, 'Aucune piste audio analysée.')));
+  C.append(cleanupPanel());
   C.append(el('div', { class: 'panel' }, el('h2', {}, 'Sous-titres et sons'),
     el('div', { class: 'options' },
       el('label', {}, el('input', { type: 'checkbox', checked: S.captions.on, onchange: e => { S.captions.on = e.target.checked; } }), 'Sous-titres'),

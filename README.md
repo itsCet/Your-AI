@@ -56,9 +56,20 @@ Tu coches ce que tu veux : le montage automatique n'utilise que ça. Les animati
 - **Ajouter une animation** : sélectionne des mots → « + Ajouter une animation ici ». Le texte est prérempli avec les mots choisis.
 - **Médias** : tes images, PNG et vidéos avec un commentaire (voir plus bas).
 
+### Nettoyage et rythme
+
+Repris de la skill [cut-video](https://github.com/louisedesadeleer/cut-video) (trouvée dans [awesome-claude-video-skills](https://github.com/zhuyansen/awesome-claude-video-skills)). Dès l'import, l'app coupe :
+- les **hésitations** (« euh », « hum », « bah ») ;
+- les **répétitions et faux départs** (« je je », « il faut il faut ») : la première tentative saute ;
+- les **reprises** : une phrase redite plus loin (mêmes premiers mots) → la dernière prise est gardée ;
+- en option, les **tics de langage** (« en fait », « du coup », « genre », « tu vois », « Bon, » en début de phrase, « …quoi. ») quand ils servent de remplissage ;
+- les **blancs**, mesurés sur l'audio, selon le rythme : **Doux** (pauses de plus de 0,6 s ramenées à 0,5 s), **Équilibré** (0,35 → 0,3 s) ou **Serré**, le rythme des reels (0,25 → 0,1 s, tics coupés).
+
+Les mots coupés sont **barrés dans l'Édition** avec la raison au survol, et se rétablissent d'un clic ; ceux que tu as coupés ou rétablis toi-même ne sont jamais touchés. Le résumé affiche la durée avant / après, la part coupée et la durée médiane d'un plan. Si le micro est trop bruyant pour distinguer voix et silence, l'app te prévient.
+
 ### 3. Revue
 
-Coupe des blancs (sensibilité réglable, visible en rouge sur la timeline), sous-titres, effets sonores, effet texte derrière toi, **export MP4**, **couverture** PNG 1080 × 1920.
+Nettoyage et rythme (coupes visibles en rouge sur la timeline), sous-titres, effets sonores, effet texte derrière toi, **export MP4**, **couverture** PNG 1080 × 1920.
 
 ## Faire le montage avec Claude (dans la conversation)
 
@@ -124,6 +135,7 @@ Les PNG détourés deviennent des stickers. 5 mises en page : carte encadrée (f
 | `js/elements.js` | Les éléments et motions (timelines GSAP + dessin) |
 | `js/anim.js` | Cache des timelines GSAP et primitives dessinées à la main (cercle, trait, surligneur, coche) |
 | `js/morph.js` | B-roll morphing et chapitre (style motion-broll : une forme, ressorts, curseur) |
+| `js/cleanup.js` | Nettoyage : hésitations, tics, répétitions, reprises, blancs selon le rythme |
 | `js/transitions.js` | Transitions entre les plans (placement, effet sur l'image, flash, glitch) |
 | `js/plan.js` | Montage automatique et aller-retour avec Claude (prompt, lecture du plan) |
 | `js/semantics.js` | Compréhension du discours : chiffres, listes, oppositions, questions, objets à illustrer |
