@@ -3,6 +3,7 @@
 import { PALETTES, fstr, clamp, fitSize, drawVideoRect, drawFit, isLight, setFrame, kineticPop, slideBlur, withGlow } from './kit.js';
 import { palOf, pairOf } from './look.js';
 import { ez, handLine, marker } from './anim.js';
+import { videoFx, withVideoFx, drawPostFx } from './transitions.js';
 import { drawOverlay, drawShrink, zoomOf, stateOf, DEPTH_BEHIND, FULLSCREEN, HIDES_CAPTIONS, DIMS } from './elements.js';
 import { drawMedia, syncMediaVideo, MEDIA_DIMS } from './media.js';
 
@@ -232,7 +233,7 @@ function drawCaptions(ctx, W, H, t, o, L) {
 }
 
 // ---------- Image complète ----------
-// o = { look, hook, titleStart, titleDur, motions, media, captions, depth (calque alpha) | null, photos, frame, noSync }
+// o = { look, hook, titleStart, titleDur, motions, media, captions, depth (calque alpha) | null, photos, frame, noSync, transitions }
 export function render(ctx, W, H, t, o) {
   setFrame(o.frame || null);
   try { renderFrame(ctx, W, H, t, o); } finally { setFrame(null); }
@@ -254,14 +255,16 @@ function renderFrame(ctx, W, H, t, o) {
     if (DIMS.has(m.type)) dim = Math.max(dim, clamp(stateOf(m, lt).a));
   }
   for (const m of mediaOn) if (MEDIA_DIMS.has(m.layout)) dim = Math.max(dim, ez('power2.out')(clamp(Math.min(t - m.start, m.start + m.dur - t) / .3)));
+  // Transition entre deux plans : seule l'image de la vidéo bouge.
+  const fx = videoFx(o.transitions, t);
   ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
-  drawVideoRect(ctx, 0, 0, W, H, 0, zoom);
+  withVideoFx(ctx, W, H, fx, (c, z) => drawVideoRect(c, 0, 0, W, H, 0, z), zoom);
   if (dim > 0) {
     ctx.save(); ctx.globalAlpha = dim; ctx.filter = `blur(${Math.round(W * .02)}px) brightness(.5)`;
-    drawVideoRect(ctx, -W * .05, -H * .05, W * 1.1, H * 1.1, 0, zoom);
+    withVideoFx(ctx, W, H, fx, (c, z) => drawVideoRect(c, -W * .05, -H * .05, W * 1.1, H * 1.1, 0, z), zoom);
     ctx.restore();
   }
-  const shrunk = shrink ? drawShrink(ctx, W, H, shrink, t - shrink.start, L, zoom) : false;
+  const shrunk = shrink ? drawShrink(ctx, W, H, shrink, t - shrink.start, L, zoom * fx.zoom) : false;
 
   const fullMedia = mediaOn.some(m => m.layout === 'full');
   const depthOn = !!(o.depth && !shrunk && !fullMedia);
@@ -279,7 +282,7 @@ function renderFrame(ctx, W, H, t, o) {
   let behindDrawn = false;
   for (const m of active) if (behind(m)) { draw(m); behindDrawn = true; }
   if (depthOn && showTitle) { drawHook(ctx, W, H, hookP, o, L, 'back'); behindDrawn = true; }
-  if (behindDrawn) drawPerson(ctx, W, H, zoom, o.depth);
+  if (behindDrawn) drawPerson(ctx, W, H, zoom, o.depth, fx);
   if (depthOn && showTitle && o.look.hook === 'depth') drawHook(ctx, W, H, hookP, o, L, 'front');
 
   for (const m of mediaOn) drawMedia(ctx, W, H, m, t - m.start, oo);
@@ -287,19 +290,20 @@ function renderFrame(ctx, W, H, t, o) {
   if (o.captions && o.captions.chunks.length && !fullMedia && !active.some(m => HIDES_CAPTIONS.has(m.type)))
     withGlow(ctx, glow && o.captions.style !== 'box' ? glow : null, W, () => drawCaptions(ctx, W, H, t, oo, L));
   if (showTitle && !depthOn) withGlow(ctx, glow, W, () => drawHook(ctx, W, H, hookP, o, L));
+  drawPostFx(ctx, W, H, fx, t);
 }
 
 // La personne seule (vidéo × masque alpha), au même cadrage que la vidéo.
 let personLayer = null;
-function drawPerson(ctx, W, H, zoom, alpha) {
+function drawPerson(ctx, W, H, zoom, alpha, fx) {
   if (!personLayer) personLayer = document.createElement('canvas');
   if (personLayer.width !== W || personLayer.height !== H) { personLayer.width = W; personLayer.height = H; }
   const g = personLayer.getContext('2d');
   g.globalCompositeOperation = 'source-over';
   g.clearRect(0, 0, W, H);
-  drawVideoRect(g, 0, 0, W, H, 0, zoom);
+  withVideoFx(g, W, H, fx, (c, z) => drawVideoRect(c, 0, 0, W, H, 0, z), zoom);
   g.globalCompositeOperation = 'destination-in';
-  drawFit(g, alpha, 0, 0, W, H, { zoom });
+  withVideoFx(g, W, H, fx, (c, z) => drawFit(c, alpha, 0, 0, W, H, { zoom: z }), zoom);
   g.globalCompositeOperation = 'source-over';
   ctx.drawImage(personLayer, 0, 0);
 }

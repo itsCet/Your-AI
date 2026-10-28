@@ -43,6 +43,8 @@ python3 serve.py          # ouvre http://localhost:8765/index.html
 - **Éléments** (cartes posées sur la vidéo) : note manuscrite, carte couleur, mot tampon, carte chiffre, checklist, avant / après, illustration emoji, écran d'appli, nom + rôle.
 - **Motion** (mouvements) : orbite de photos, carrousel, la vidéo rétrécit dans une carte, commentaire d'abonné, mots surlignés, compteur, phrase plein écran, beat cuts, punch-in, projecteur.
 
+- **Transitions** entre les plans : recadrage (jump cut plus serré / plus large), whip pan, flou zoom, flash, glitch, zoom rotatif. Un plan change à chaque coupe, à chaque début de phrase et au moins toutes les ~6 s. Le style « Mix » met des recadrages partout et une grosse transition aux changements d'idée ; chaque transition se change dans l'Édition (étiquette ⇄), avec son whoosh.
+
 Tu coches ce que tu veux : le montage automatique n'utilise que ça. Les animations sont faites avec [GSAP](https://gsap.com) (timelines rejouées à l'image près, en avant comme en arrière).
 
 ### 2. Édition : la transcription comme un document
@@ -116,6 +118,7 @@ Les PNG détourés deviennent des stickers. 5 mises en page : carte encadrée (f
 | `js/render.js` | Dessin d'une image complète : vidéo, médias, éléments, sous-titres, accroche |
 | `js/elements.js` | Les éléments et motions (timelines GSAP + dessin) |
 | `js/anim.js` | Cache des timelines GSAP et primitives dessinées à la main (cercle, trait, surligneur, coche) |
+| `js/transitions.js` | Transitions entre les plans (placement, effet sur l'image, flash, glitch) |
 | `js/plan.js` | Montage automatique et aller-retour avec Claude (prompt, lecture du plan) |
 | `js/semantics.js` | Compréhension du discours : chiffres, listes, oppositions, questions, objets à illustrer |
 | `js/media.js` | Lecture des commentaires et mises en page des médias |
