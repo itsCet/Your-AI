@@ -78,22 +78,22 @@ export const CATALOG = Object.fromEntries([...ELEMENTS, ...MOTIONS].map(x => [x.
 // Looks prêts à l'emploi (départ rapide). Tout reste modifiable étape par étape.
 export const PRESETS = [
   { id: 'signature', name: 'Signature', desc: 'Chaud, manuscrit, personnel',
-    pal: 'sunlit', fonts: 'montserrat-caveat', hook: 'tiles', captions: 'editorial', fx: { pop: true, slide: true, glow: false },
+    pal: 'sunlit', fonts: 'montserrat-caveat', hook: 'tiles', captions: 'editorial', trans: 'auto', fx: { pop: true, slide: true, glow: false },
     elements: ['note', 'colorcard', 'stamp', 'statcard', 'checklist', 'emoji'], motion: ['orbit', 'shrink', 'comment', 'wordreveal', 'counter', 'zoom'] },
   { id: 'clean', name: 'Clean', desc: 'Sobre, net, pro',
-    pal: 'electric', fonts: 'playfair-inter', hook: 'editorial', captions: 'highlight', fx: { pop: false, slide: true, glow: false },
+    pal: 'electric', fonts: 'playfair-inter', hook: 'editorial', captions: 'highlight', trans: 'blur', fx: { pop: false, slide: true, glow: false },
     elements: ['statcard', 'checklist', 'versus', 'lower', 'screen'], motion: ['wordreveal', 'counter', 'zoom'] },
   { id: 'loud', name: 'Loud', desc: 'Capitales, rouge, punch',
-    pal: 'signal', fonts: 'anton-inter', hook: 'stacked', captions: 'pop', fx: { pop: true, slide: false, glow: false },
+    pal: 'signal', fonts: 'anton-inter', hook: 'stacked', captions: 'pop', trans: 'flash', fx: { pop: true, slide: false, glow: false },
     elements: ['stamp', 'statcard', 'versus', 'emoji'], motion: ['beat', 'kinetic', 'counter', 'carousel', 'zoom'] },
   { id: 'playful', name: 'Playful', desc: 'Rose, manuscrit, emoji',
-    pal: 'pink', fonts: 'montserrat-caveat', hook: 'tag', captions: 'hand', fx: { pop: true, slide: true, glow: false },
+    pal: 'pink', fonts: 'montserrat-caveat', hook: 'tag', captions: 'hand', trans: 'spin', fx: { pop: true, slide: true, glow: false },
     elements: ['note', 'colorcard', 'emoji', 'stamp'], motion: ['orbit', 'carousel', 'comment', 'wordreveal', 'zoom'] },
   { id: 'scrapbook', name: 'Scrapbook', desc: 'Or et crème, collé à la main',
-    pal: 'gold', fonts: 'dmserif-caveat', hook: 'underline', captions: 'hand', fx: { pop: false, slide: true, glow: false },
+    pal: 'gold', fonts: 'dmserif-caveat', hook: 'underline', captions: 'hand', trans: 'zoomcut', fx: { pop: false, slide: true, glow: false },
     elements: ['note', 'colorcard', 'screen', 'checklist'], motion: ['shrink', 'carousel', 'orbit', 'comment'] },
   { id: 'depth', name: 'Derrière toi', desc: 'Mots géants derrière ta tête',
-    pal: 'mono', fonts: 'anton-inter', hook: 'depth', captions: 'brackets', fx: { pop: true, slide: true, glow: false }, depth: true,
+    pal: 'mono', fonts: 'anton-inter', hook: 'depth', captions: 'brackets', trans: 'whip', fx: { pop: true, slide: true, glow: false }, depth: true,
     elements: ['statcard', 'checklist', 'versus'], motion: ['kinetic', 'beat', 'counter', 'zoom'] },
 ];
 

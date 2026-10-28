@@ -11,10 +11,11 @@ import { decodeAudio, loudness, findSilences, cutsFromSilences, findPeaks, trans
 import { autoPlan, itemFromMoment, claudePrompt, parsePlan, planToItems, hookFrom, wordIndexAt } from './plan.js';
 import { MEDIA_LAYOUTS, POSITIONS, interpretMedia, hasAlpha } from './media.js';
 import { SFX, DEFAULT_SFX, sfxEvents, playSfx } from './sfx.js';
+import { TRANSITIONS, TRANS_STYLES, TRANS_SFX, planTransitions, transName } from './transitions.js';
 import { depth, BROWSER_MODELS, startBrowserMatting, startServerMatting, resetMatting, updateDepth, whenPrepared } from './depth.js';
 
 const LANGS = [['fr', 'Français'], ['en', 'Anglais'], ['es', 'Espagnol'], ['de', 'Allemand'], ['it', 'Italien'], ['pt', 'Portugais'], ['ar', 'Arabe'], ['', 'Détection auto']];
-const LOOK_STEPS = ['Couleurs', 'Polices', 'Accroche', 'Sous-titres', 'Éléments', 'Motion', 'Revue'];
+const LOOK_STEPS = ['Couleurs', 'Polices', 'Accroche', 'Sous-titres', 'Éléments', 'Motion', 'Transitions', 'Revue'];
 const CHIP_COLORS = { note: '#ffd60a', colorcard: '#ffb020', stamp: '#ff7a59', statcard: '#7ee0ff', checklist: '#3ddc97', versus: '#ff9bd2', emoji: '#ffe08a',
   screen: '#a0b4ff', lower: '#c8c8c8', orbit: '#b892ff', carousel: '#b892ff', shrink: '#ffd60a', comment: '#ffffff', wordreveal: '#ffe600', counter: '#7ee0ff',
   kinetic: '#ff8a65', beat: '#ff5a4f', zoom: '#9e9e9e', spotlight: '#9e9e9e' };
@@ -28,7 +29,7 @@ const S = {
   look: { ...DEFAULT_LOOK }, hook: { l1: 'Ton accroche', l2: 'en deux lignes' }, titleDur: 3,
   items: [], media: [], photos: [], sample: null,
   captions: { on: true, pos: .72 },
-  cuts: { on: true, sens: .3, minLen: .55, segs: [] }, cutSegs: [],
+  cuts: { on: true, sens: .3, minLen: .55, segs: [] }, cutSegs: [], transOver: {},
   sfx: { on: true, vol: .6 }, depthOn: false, depthEngine: 'browser:multiclass',
   sel: null, lastWord: 0, dict: loadDict(),
   uid: 1, server: { ffmpeg: false, matting: [] }, exporting: false,
@@ -95,9 +96,20 @@ function mediaCfg() {
   });
 }
 
+// Transitions entre les plans (recalculées seulement quand les coupes, le style ou tes choix changent).
+let transMemo = { k: null, v: [] };
+function transitions() {
+  const style = S.look.trans || 'auto';
+  const k = [S.cutSegs, style, JSON.stringify(S.transOver), S.words.length];
+  if (transMemo.k && k.every((x, i) => x === transMemo.k[i])) return transMemo.v;
+  transMemo = { k, v: planTransitions(S.cutSegs, S.words, style, S.transOver, S.A.duration || video.duration || Infinity) };
+  return transMemo.v;
+}
+
 // Configuration de rendu complète.
 function cfg(over = {}) {
   return {
+    transitions: transitions(),
     look: S.look, hook: S.hook, titleStart: 0, titleDur: S.titleDur,
     motions: S.items.map(itemForRender), media: mediaCfg(),
     captions: S.captions.on && S.chunks.length ? { style: S.look.captions, pos: S.captions.pos, chunks: S.chunks } : null,
@@ -166,6 +178,8 @@ function sfxTimeline(c) {
   if (c.hook) ev.push({ t: c.titleStart, kind: DEFAULT_SFX.title });
   for (const m of c.motions) for (const e of sfxEvents(m)) ev.push({ t: m.start + e.t, kind: e.kind });
   for (const m of c.media || []) ev.push({ t: m.start, kind: m.layout === 'full' ? 'whoosh' : DEFAULT_SFX.media });
+  // Le son d'une transition part juste avant la coupe (après, la lecture a déjà sauté).
+  for (const tr of c.transitions || []) if (TRANS_SFX[tr.kind]) ev.push({ t: tr.a - .12, kind: TRANS_SFX[tr.kind] });
   return ev.sort((a, b) => a.t - b.t);
 }
 let lastT = 0;
@@ -354,8 +368,8 @@ async function captureStills() {
 function lookTab(C) {
   C.append(el('div', { class: 'steps' }, ...LOOK_STEPS.map((n, i) => el('button', { class: S.lookStep === i ? 'on' : '', onclick: () => { S.lookStep = i; S.visited.add(i); draw(); } },
     `${i + 1} ${n}`, S.visited.has(i) && i !== S.lookStep ? el('span', { class: 'ok' }, '✓') : null))));
-  [lookColors, lookFonts, lookHook, lookCaptions, lookElements, lookMotion, lookReview][S.lookStep](C);
-  if (S.lookStep < 6) C.append(el('div', { class: 'row-btns', style: 'margin-top:14px' },
+  [lookColors, lookFonts, lookHook, lookCaptions, lookElements, lookMotion, lookTrans, lookReview][S.lookStep](C);
+  if (S.lookStep < LOOK_STEPS.length - 1) C.append(el('div', { class: 'row-btns', style: 'margin-top:14px' },
     el('button', { class: 'btn primary', onclick: () => { S.lookStep++; S.visited.add(S.lookStep); draw(); } }, `Suivant : ${LOOK_STEPS[S.lookStep + 1]} →`)));
 }
 
@@ -458,6 +472,36 @@ function lookMotion(C) {
     el('label', {}, el('input', { type: 'checkbox', checked: fx.glow, onchange: e => { S.look = { ...S.look, fx: { ...fx, glow: e.target.checked } }; } }), 'Lueur néon')));
   toolboxGrid(C, MOTIONS, 'motion');
 }
+// Aperçu d'une transition : deux images de ta vidéo, coupe au milieu de la boucle.
+function transCard(kindOf) {
+  return liveCanvas(clock => {
+    const loop = 1.8, n = Math.floor(clock / loop), lt = clock % loop, at = .8;
+    const kind = kindOf(n);
+    const ph = S.photos.length >= 2 ? S.photos : [S.sample?.frame, S.sample?.frame];
+    const before = lt < at, t = before ? lt : lt + 10;
+    const trans = [{ key: 'x', a: at, b: at + 10, kind, level: kind === 'cut' ? 1 : 1.12 }];
+    return { t, o: cfg({ hook: null, captions: null, media: [], motions: [], depth: null, transitions: trans,
+      frame: ph[(before ? 2 * n : 2 * n + 1) % ph.length] || null }) };
+  });
+}
+function lookTrans(C) {
+  const cur = transitions();
+  const big = cur.filter(tr => TRANSITIONS.find(x => x.id === tr.kind)?.big).length;
+  C.append(el('p', { class: 'lead' }, el('b', {}, 'Tes transitions entre les plans. '),
+    cur.length ? `${cur.length} changements de plan dans ta vidéo (coupes, débuts de phrase, et au moins toutes les 6 s) : ${big} grosse(s) transition(s) aux changements d'idée, des recadrages ailleurs. Chacune se change dans l'Édition (étiquette ⇄).`
+      : 'Ta vidéo est trop courte pour changer de plan.'));
+  const MIX = ['whip', 'blur', 'flash', 'spin'];
+  const g = el('div', { class: 'grid' });
+  TRANS_STYLES.forEach((st, i) => {
+    const on = (S.look.trans || 'auto') === st.id;
+    g.append(el('div', { class: 'card' + (on ? ' sel' : ''), onclick: () => { S.look = { ...S.look, trans: st.id, preset: '' }; draw(); } },
+      el('span', { class: 'num' }, String(i + 1)),
+      transCard(n => st.id === 'auto' ? MIX[n % MIX.length] : st.id === 'zoomcut' ? 'zoomcut' : st.id),
+      el('h3', {}, st.name), el('p', {}, st.desc), el('button', { class: 'take' }, on ? 'Pris ✓' : 'Prendre')));
+  });
+  C.append(g);
+}
+
 function lookReview(C) {
   const L = lookContext(S.look);
   C.append(el('p', { class: 'lead' }, el('b', {}, 'Ton look est prêt. '), 'Le montage automatique peut être refait avec ces éléments ; ce que tu as ajouté à la main est gardé.'));
@@ -465,6 +509,7 @@ function lookReview(C) {
     el('p', {}, `Couleurs : ${L.P.name} · Polices : ${L.pair.name} · Accroche : ${HOOK_STYLES.find(h => h.id === S.look.hook)?.name} · Sous-titres : ${CAPTION_STYLES.find(c => c.id === S.look.captions)?.name}`),
     el('p', { class: 'muted' }, 'Éléments : ' + ((S.look.elements || []).map(id => CATALOG[id].name).join(', ') || 'aucun')),
     el('p', { class: 'muted' }, 'Motion : ' + ((S.look.motion || []).map(id => CATALOG[id].name).join(', ') || 'aucun')),
+    el('p', { class: 'muted' }, 'Transitions : ' + (TRANS_STYLES.find(x => x.id === (S.look.trans || 'auto'))?.name || '')),
     el('div', { class: 'row-btns' },
       el('button', { class: 'btn', onclick: () => { replan(); draw(); } }, '↻ Refaire le montage auto avec ce look'),
       el('button', { class: 'btn yellow', onclick: () => { S.tab = 'edit'; draw(); } }, 'Corriger le texte et les animations →'))));
@@ -534,6 +579,12 @@ function doc() {
   const chipsAt = {};
   for (const it of S.items) (chipsAt[anchorOf(it)] ||= []).push(it);
   const selItem = S.sel?.kind === 'item' ? itemByUid(S.sel.uid) : null;
+  // Une étiquette ⇄ devant le premier mot gardé de chaque nouveau plan.
+  const transAt = {};
+  for (const tr of transitions()) {
+    const i = S.words.findIndex(w => !w.cut && w.s >= tr.b - .12);
+    if (i >= 0) transAt[i] = tr;
+  }
   for (const sent of sentencesOf(S.words)) {
     const p = el('p', {}, el('span', { class: 'ts', onclick: () => { video.currentTime = S.words[sent.i0].s; } }, fmt(S.words[sent.i0].s)));
     for (const i of sent.words) {
@@ -541,6 +592,12 @@ function doc() {
       if (i > 0 && w.s - S.words[i - 1].e > .7) {
         const a = S.words[i - 1].e, b = w.s, cut = S.cutSegs.some(([x, y]) => x <= a + .15 && y >= b - .15);
         p.append(el('span', { class: 'pause' + (cut ? ' cut' : ''), title: cut ? 'Blanc coupé' : 'Blanc', onclick: () => { video.currentTime = a; } }, ` · ${(b - a).toFixed(1)} s · `));
+      }
+      if (transAt[i]) {
+        const tr = transAt[i];
+        p.append(el('span', { class: 'chip trans' + (S.sel?.kind === 'trans' && S.sel.key === tr.key ? ' on' : ''), title: 'Changer la transition',
+          onmouseup: e => e.stopPropagation(),
+          onclick: e => { e.stopPropagation(); S.sel = { kind: 'trans', key: tr.key }; video.currentTime = Math.max(0, tr.a - 1); draw(); } }, '⇄ ' + transName(tr.kind)));
       }
       for (const it of chipsAt[i] || []) {
         p.append(el('span', { class: 'chip' + (selItem === it ? ' on' : ''), style: `background:${CHIP_COLORS[it.type] || '#ffd60a'}`, title: 'Modifier cette animation',
@@ -604,6 +661,18 @@ function editWordInline(i) {
 function inspector() {
   const box = el('div', { class: 'inspector' });
   if (S.sel?.kind === 'item' && itemByUid(S.sel.uid)) { itemInspector(box, itemByUid(S.sel.uid)); return box; }
+  const tr = S.sel?.kind === 'trans' && transitions().find(x => x.key === S.sel.key);
+  if (tr) {
+    box.append(el('h2', {}, el('span', { class: 'chip trans' }, '⇄ Transition'), el('span', { class: 'muted' }, tr.b - tr.a > .05 ? `coupe ${fmt1(tr.a)} → ${fmt1(tr.b)}` : `changement de plan à ${fmt1(tr.b)}`)));
+    const g = el('div', { class: 'chips-row', style: 'margin:8px 0' });
+    for (const x of TRANSITIONS) g.append(el('button', { class: 'chip-btn' + (tr.kind === x.id ? ' on' : ''), title: x.desc,
+      onclick: () => { S.transOver = { ...S.transOver, [tr.key]: x.id }; draw(); playAround(tr); } }, x.name));
+    box.append(g, el('div', { class: 'row-btns' },
+      el('button', { class: 'btn small', onclick: () => playAround(tr) }, '▶ Voir'),
+      S.transOver[tr.key] ? el('button', { class: 'btn small', onclick: () => { const o = { ...S.transOver }; delete o[tr.key]; S.transOver = o; draw(); } }, '↺ Revenir au choix du look') : null,
+      el('button', { class: 'btn small', onclick: () => { S.sel = null; draw(); } }, 'Fermer')));
+    return box;
+  }
   if (S.sel?.kind === 'words' && S.words.length) {
     const { a, b } = S.sel, one = a === b, w = S.words[a];
     const allCut = S.words.slice(a, b + 1).every(x => x.cut);
@@ -634,9 +703,11 @@ function inspector() {
     return box;
   }
   box.append(el('h2', {}, 'Comment corriger'),
-    el('p', { class: 'muted', style: 'margin:0' }, 'Clique sur un mot pour le corriger ou le couper. Glisse sur plusieurs mots pour les couper ou poser une animation dessus. Double-clic pour corriger directement. Clique sur une étiquette ▶ pour modifier une animation.'));
+    el('p', { class: 'muted', style: 'margin:0' }, 'Clique sur un mot pour le corriger ou le couper. Glisse sur plusieurs mots pour les couper ou poser une animation dessus. Double-clic pour corriger directement. Clique sur une étiquette ▶ pour modifier une animation, ou ⇄ pour changer une transition.'));
   return box;
 }
+
+function playAround(tr) { video.currentTime = Math.max(0, tr.a - 1.2); video.play().catch(() => {}); }
 
 function itemInspector(box, it) {
   const def = CATALOG[it.type];
@@ -750,6 +821,13 @@ function importPlanModal() {
       for (const c of r.corrections) if (S.words[c.i] && c.w) { S.words[c.i].w = c.w; S.words[c.i].fixed = keyW(S.words[c.i].orig) !== keyW(c.w); }
       for (const [a, b] of r.cuts) for (let i = a; i <= b && i < S.words.length; i++) if (S.words[i]) S.words[i].cut = true;
       if (r.hook?.l1) S.hook = { l1: r.hook.l1, l2: r.hook.l2 || '' };
+      refreshDerived();
+      // Transitions demandées : posées sur la coupe la plus proche du mot indiqué.
+      for (const x of r.transitions) {
+        const w = S.words[x.at | 0]; if (!w || !TRANSITIONS.some(k => k.id === x.type)) continue;
+        const tr = transitions().reduce((best, c) => Math.abs(c.b - w.s) < Math.abs((best?.b ?? 1e9) - w.s) ? c : best, null);
+        if (tr && Math.abs(tr.b - w.s) < 1.5) S.transOver = { ...S.transOver, [tr.key]: x.type };
+      }
       S.items = [...S.items.filter(it => it.from === 'manual'), ...r.items].sort((x, y) => x.start - y.start);
       refreshDerived();
       m.remove(); S.tab = 'edit'; S.sel = null; draw();
@@ -777,7 +855,8 @@ function reviewTab(C) {
   C.append(el('div', { class: 'panel' }, el('h2', {}, 'Sous-titres et sons'),
     el('div', { class: 'options' },
       el('label', {}, el('input', { type: 'checkbox', checked: S.captions.on, onchange: e => { S.captions.on = e.target.checked; } }), 'Sous-titres'),
-      el('label', {}, el('input', { type: 'checkbox', checked: S.sfx.on, onchange: e => { S.sfx.on = e.target.checked; } }), 'Effets sonores sur les animations'),
+      el('label', {}, el('input', { type: 'checkbox', checked: S.sfx.on, onchange: e => { S.sfx.on = e.target.checked; } }), 'Effets sonores sur les animations et transitions'),
+      el('label', {}, 'Transitions', select(TRANS_STYLES.map(x => [x.id, x.name]), S.look.trans || 'auto', v => { S.look = { ...S.look, trans: v }; })),
       el('label', {}, 'Volume', el('input', { type: 'range', min: '0', max: '1', step: '0.05', value: S.sfx.vol, oninput: e => { S.sfx.vol = +e.target.value; } })))));
   C.append(depthPanel());
   C.append(el('div', { class: 'panel', style: 'margin-top:14px' }, el('h2', {}, 'Export'),

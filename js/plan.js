@@ -4,6 +4,7 @@
 // - claudePrompt / parsePlan / applyPlan : aller-retour avec Claude dans la conversation.
 import { CATALOG } from './look.js';
 import { analyzeContent } from './semantics.js';
+import { TRANSITIONS } from './transitions.js';
 
 const LEAD = { checklist: .35, statcard: .3, versus: .3, screen: .3, shrink: .25, kinetic: .1 };
 const clean = w => String(w).replace(/[.,!?;:«»"“”()…]/g, '');
@@ -121,9 +122,11 @@ Format attendu :
   "hook": { "l1": "accroche courte", "l2": "suite" },
   "corrections": [ { "i": 12, "w": "mot corrigé" } ],
   "cuts": [ [indexDébut, indexFin] ],
-  "items": [ { "type": "checklist", "at": 34, "until": 52, "f": { "title": "…", "items": ["…", "…"] }, "itemAt": [34, 40, 47] } ]
+  "items": [ { "type": "checklist", "at": 34, "until": 52, "f": { "title": "…", "items": ["…", "…"] }, "itemAt": [34, 40, 47] } ],
+  "transitions": [ { "at": 53, "type": "flash" } ]
 }
 - "at" / "until" = index des mots (ci-dessous) où l'élément apparaît et disparaît ; "itemAt" = index du mot où chaque ligne d'une checklist est dite.
+- transitions : sur une coupe (blanc ou "cuts"), "at" = index du premier mot gardé après la coupe ; types : ${TRANSITIONS.map(x => `${x.id} (${x.name})`).join(', ')}. Les grosses transitions aux changements d'idée, sinon "zoomcut".
 - corrections : fautes de transcription (franglais, noms propres). cuts : hésitations ou phrases ratées à couper.
 - Une animation toutes les 3 à 6 s environ, qui illustre vraiment le sens de ce qui est dit, avec des textes courts tirés de la vidéo.
 
@@ -157,7 +160,7 @@ export function planToItems(plan, words, startUid = 1) {
     items.push(it);
   }
   items.sort((a, b) => a.start - b.start);
-  return { items, hook: plan.hook, corrections: plan.corrections || [], cuts: plan.cuts || [] };
+  return { items, hook: plan.hook, corrections: plan.corrections || [], cuts: plan.cuts || [], transitions: plan.transitions || [] };
 }
 
 // Accroche (2 lignes) tirée de la première phrase qui a du sens.
