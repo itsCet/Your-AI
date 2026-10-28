@@ -37,6 +37,9 @@ const S = {
 };
 
 const $ = id => document.getElementById(id);
+const store = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); v === null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch { return null; } };
+// Téléphone ou tablette : la transcription n'utilise pas la carte graphique (WebGPU), trop fragile dans Safari.
+const isPhone = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const fmt = s => isFinite(s) ? `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}` : '0:00';
 const fmt1 = s => `${Math.floor(s / 60)}:${(Math.max(0, s) % 60).toFixed(1).padStart(4, '0')}`;
 const video = $('video');
@@ -322,7 +325,9 @@ function importScreen(C) {
   C.append(el('div', { class: 'options' },
     el('label', {}, el('input', { type: 'checkbox', checked: S.opts.transcribe, disabled: busy || null, onchange: e => { S.opts.transcribe = e.target.checked; } }), 'Transcrire la voix'),
     el('label', {}, 'Langue', select(LANGS, S.opts.lang, v => { S.opts.lang = v; }, { disabled: busy || null }))));
-  C.append(el('p', { class: 'muted' }, 'La première transcription télécharge le modèle Whisper (~200 Mo, une seule fois). Tout tourne sur ton ordinateur.'));
+  C.append(el('p', { class: 'muted' }, 'La première transcription télécharge le modèle Whisper (~200 Mo, une seule fois). Tout tourne sur ton appareil : ta vidéo n\'est envoyée nulle part.'));
+  if (store('ves-asr-running') === '1' && S.A.status === 'idle') C.append(el('p', { class: 'err' },
+    'La dernière transcription a fait planter la page (mémoire du téléphone). La prochaine utilisera un modèle plus léger, un peu moins précis : pense à corriger les mots dans l\'Édition.'));
   if (S.A.status !== 'idle') C.append(el('div', { class: 'panel' },
     el('div', { id: 'amsg', class: S.A.status === 'error' ? 'err' : '' }, S.A.msg),
     el('div', { class: 'progress' }, el('div', { id: 'abar', style: `width:${S.A.frac * 100}%` })),
@@ -355,8 +360,15 @@ async function loadFile(file) {
     setProgress(A.pcm ? 'Audio analysé.' : 'Son illisible : ' + A.audioError, .1);
     if (A.pcm && S.opts.transcribe) {
       A.transcribing = true; draw();
-      try { A.words = await transcribe(A.pcm, A.db, { lang: S.opts.lang, onProgress: asrProgress }); }
-      catch (e) { if (e.message !== 'cancelled') A.asrError = e.message; }
+      // Si la page a planté pendant la dernière transcription (mémoire du téléphone), on passe en mode léger.
+      // Le choix est retenu sur cet appareil.
+      if (store('ves-asr-running') === '1') store('ves-asr-light', '1');
+      const light = store('ves-asr-light') === '1';
+      store('ves-asr-running', '1');
+      try {
+        A.words = await transcribe(A.pcm, A.db, { lang: S.opts.lang, onProgress: asrProgress, light, gpu: !isPhone });
+        store('ves-asr-running', null);
+      } catch (e) { store('ves-asr-running', null); if (e.message !== 'cancelled') A.asrError = e.message; }
       A.transcribing = false;
     }
     // Les mots éditables, avec les corrections déjà retenues dans le dictionnaire.

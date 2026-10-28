@@ -5,24 +5,24 @@ export const RATE = 16000;   // fréquence attendue par Whisper
 export const HOP = 0.05;     // pas d'analyse du volume, en secondes
 
 // Décode la piste audio du fichier en mono 16 kHz. Retourne { pcm, how } ; pcm = null si aucun moyen n'a marché
-// (error dit pourquoi). Trois essais :
-//  1. decodeAudioData directement en 16 kHz ;
-//  2. decodeAudioData au débit natif puis rééchantillonnage (certains navigateurs refusent le 16 kHz) ;
-//  3. WebCodecs + mp4box.js : on extrait la piste AAC du conteneur (.mov de l'iPhone, que Safari ne décode pas
-//     toujours avec decodeAudioData) et on la décode avec AudioDecoder.
+// (error dit pourquoi). Essais dans l'ordre :
+//  1. WebCodecs + mp4box.js : on lit seulement l'en-tête et les octets du son (AAC) du conteneur .mp4 / .mov ;
+//  2. decodeAudioData directement en 16 kHz (charge toute la vidéo en mémoire) ;
+//  3. decodeAudioData au débit natif puis rééchantillonnage (certains navigateurs refusent le 16 kHz).
 export async function decodeAudio(file) {
-  const buf = await file.arrayBuffer();
   const errors = [];
-  try { return { pcm: mono(await new OfflineAudioContext(1, 1, RATE).decodeAudioData(buf.slice(0))), how: 'decodeAudioData' }; }
+  // D'abord la lecture économe (marche avec .mp4 et .mov) ; decodeAudioData seulement si la vidéo n'est pas énorme.
+  try { return { pcm: await decodeWithWebCodecs(file), how: 'WebCodecs' }; }
+  catch (e) { errors.push('WebCodecs : ' + (e?.message || e)); }
+  if (file.size > 150e6) return { pcm: null, error: errors.join(' · ') + ' · vidéo trop lourde pour la charger en entier (' + Math.round(file.size / 1e6) + ' Mo)' };
+  try { return { pcm: mono(await new OfflineAudioContext(1, 1, RATE).decodeAudioData(await file.arrayBuffer())), how: 'decodeAudioData' }; }
   catch (e) { errors.push('decodeAudioData 16 kHz : ' + (e?.message || e)); }
   try {
     const ac = new (window.AudioContext || window.webkitAudioContext)();
-    const ab = await ac.decodeAudioData(buf.slice(0));
+    const ab = await ac.decodeAudioData(await file.arrayBuffer());
     ac.close?.();
     return { pcm: await resample(mono(ab), ab.sampleRate), how: 'decodeAudioData + rééchantillonnage' };
   } catch (e) { errors.push('decodeAudioData : ' + (e?.message || e)); }
-  try { return { pcm: await decodeWithWebCodecs(buf), how: 'WebCodecs' }; }
-  catch (e) { errors.push('WebCodecs : ' + (e?.message || e)); }
   return { pcm: null, error: errors.join(' · ') };
 }
 
@@ -58,29 +58,50 @@ function loadMp4box() {
   });
 }
 
-async function decodeWithWebCodecs(buf) {
+// Lecture économe en mémoire : on ne lit que l'en-tête (moov) et les octets du son, jamais toute la vidéo.
+// Une vidéo d'iPhone pèse vite plusieurs centaines de Mo ; la charger en entier fait planter Safari.
+async function topBoxes(file) {
+  const out = [];
+  let pos = 0;
+  while (pos + 8 <= file.size) {
+    const v = new DataView(await file.slice(pos, pos + 16).arrayBuffer());
+    let sz = v.getUint32(0);
+    const type = String.fromCharCode(v.getUint8(4), v.getUint8(5), v.getUint8(6), v.getUint8(7));
+    if (sz === 1) sz = Number(v.getBigUint64(8)); else if (sz === 0) sz = file.size - pos;
+    if (sz < 8) break;
+    out.push({ type, pos, sz });
+    pos += sz;
+  }
+  return out;
+}
+
+async function decodeWithWebCodecs(file) {
   if (!('AudioDecoder' in window)) throw new Error('AudioDecoder indisponible');
   const MP4Box = await loadMp4box();
+  const boxes = await topBoxes(file);
+  const moov = boxes.find(b => b.type === 'moov');
+  if (!moov) throw new Error('en-tête moov introuvable');
   const f = MP4Box.createFile();
-  const { track, samples, description } = await new Promise((res, rej) => {
-    let track = null, description, samples = [];
+  const info = await new Promise((res, rej) => {
     f.onError = e => rej(new Error(String(e)));
-    f.onReady = info => {
-      track = info.audioTracks?.[0];
-      if (!track) return rej(new Error('pas de piste audio'));
-      // Configuration du décodeur AAC (AudioSpecificConfig) tirée de la boîte esds.
-      const entry = f.getTrackById(track.id).mdia.minf.stbl.stsd.entries[0];
-      const dsi = entry?.esds?.esd?.descs?.[0]?.descs?.[0];
-      if (dsi?.data) description = new Uint8Array(dsi.data);
-      f.setExtractionOptions(track.id, null, { nbSamples: 1e9 });
-      f.start();
-    };
-    f.onSamples = (id, user, s) => { samples.push(...s); };
-    const ab = buf.slice(0); ab.fileStart = 0;
-    f.appendBuffer(ab); f.flush();
-    setTimeout(() => track ? res({ track, samples, description }) : rej(new Error('conteneur illisible')), 0);
+    f.onReady = res;
+    (async () => {
+      for (const bx of boxes.filter(b => b.type === 'ftyp' || b.type === 'moov')) {
+        const ab = await file.slice(bx.pos, bx.pos + bx.sz).arrayBuffer(); ab.fileStart = bx.pos;
+        f.appendBuffer(ab);
+      }
+      f.flush();
+      setTimeout(() => rej(new Error('en-tête illisible')), 50);
+    })().catch(rej);
   });
-  if (!samples.length) throw new Error('aucun échantillon audio');
+  const track = info.audioTracks?.[0];
+  if (!track) throw new Error('pas de piste audio');
+  // Configuration du décodeur AAC (AudioSpecificConfig) tirée de la boîte esds.
+  const entry = f.getTrackById(track.id).mdia.minf.stbl.stsd.entries[0];
+  const dsi = entry?.esds?.esd?.descs?.[0]?.descs?.[0];
+  const description = dsi?.data ? new Uint8Array(dsi.data) : undefined;
+  const samples = f.getTrackSamplesInfo(track.id);
+  if (!samples?.length) throw new Error('aucun échantillon audio');
   const rate = track.audio.sample_rate, chans = track.audio.channel_count;
   const parts = [];
   let total = 0, outRate = rate, err = null;
@@ -99,9 +120,19 @@ async function decodeWithWebCodecs(buf) {
   // Nom de codec normalisé (« mp4a.40.2 ») : mp4box peut renvoyer « mp4a » seul ou « mp4a.40.02 ».
   const aot = description ? description[0] >> 3 : 2;
   const m = /^mp4a\.40\.0*(\d+)$/.exec(track.codec || '');
-  const codec = `mp4a.40.${m ? m[1] : aot || 2}`;
-  dec.configure({ codec, sampleRate: rate, numberOfChannels: chans, ...(description ? { description } : {}) });
-  for (const s of samples) dec.decode(new EncodedAudioChunk({ type: 'key', timestamp: Math.round(s.cts * 1e6 / s.timescale), duration: Math.round(s.duration * 1e6 / s.timescale), data: s.data }));
+  dec.configure({ codec: `mp4a.40.${m ? m[1] : aot || 2}`, sampleRate: rate, numberOfChannels: chans, ...(description ? { description } : {}) });
+  // Lecture par blocs d'échantillons contigus (le son est rangé par paquets entre les images).
+  for (let i = 0; i < samples.length;) {
+    let j = i, end = samples[i].offset + samples[i].size;
+    while (j + 1 < samples.length && samples[j + 1].offset === end && end - samples[i].offset < (1 << 20)) { j++; end += samples[j].size; }
+    const bytes = new Uint8Array(await file.slice(samples[i].offset, end).arrayBuffer());
+    for (let k = i; k <= j; k++) {
+      const s = samples[k], o = s.offset - samples[i].offset;
+      dec.decode(new EncodedAudioChunk({ type: 'key', timestamp: Math.round(s.cts * 1e6 / s.timescale), duration: Math.round(s.duration * 1e6 / s.timescale), data: bytes.subarray(o, o + s.size) }));
+    }
+    if (dec.decodeQueueSize > 200) await new Promise(r => setTimeout(r, 0));
+    i = j + 1;
+  }
   await dec.flush();
   dec.close();
   if (err) throw err;
@@ -172,10 +203,11 @@ const MODEL = 'onnx-community/whisper-base_timestamped';
 const WORKER_SRC = `
 import { pipeline } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0/dist/transformers.min.js';
 let asr = null;
-async function load(webgpu) {
+async function load(webgpu, light) {
   const files = {};
   const opts = {
-    dtype: { encoder_model: 'fp32', decoder_model_merged: 'q4' },
+    // Mode léger (téléphone) : encodeur quantifié en 8 bits, ~4 fois moins de mémoire (le décodeur q8 de ce modèle est cassé).
+    dtype: light ? { encoder_model: 'q8', decoder_model_merged: 'q4' } : { encoder_model: 'fp32', decoder_model_merged: 'q4' },
     progress_callback: e => {
       if (e.status !== 'progress' || !e.total) return;
       files[e.file] = [e.loaded, e.total];
@@ -192,13 +224,13 @@ let forceWasm = false;
 self.onmessage = async ({ data }) => {
   const opts = { return_timestamps: 'word', chunk_length_s: 30, stride_length_s: 5, task: 'transcribe', ...(data.lang ? { language: data.lang } : {}) };
   try {
-    if (!asr) asr = await load(data.webgpu && !forceWasm);
+    if (!asr) asr = await load(data.webgpu && !forceWasm && !data.light, data.light);
     let out;
     try { out = await asr(data.pcm, opts); }
     catch (e) {
       // La carte graphique (WebGPU) a échoué pendant le calcul : on recommence sur le processeur.
       if (forceWasm) throw e;
-      forceWasm = true; asr = await load(false);
+      forceWasm = true; asr = await load(false, data.light);
       out = await asr(data.pcm, opts);
     }
     self.postMessage({ type: 'done', id: data.id, out });
@@ -234,7 +266,7 @@ function windows(db, duration) {
 }
 
 // Retourne [{ w, s, e }] : chaque mot avec son début et sa fin en secondes.
-export async function transcribe(pcm, db, { lang, onProgress }) {
+export async function transcribe(pcm, db, { lang, onProgress, light = false, gpu = true }) {
   const duration = pcm.length / RATE;
   const thr = silenceThreshold(db, .3);
   const wins = windows(db, duration);
@@ -261,7 +293,7 @@ export async function transcribe(pcm, db, { lang, onProgress }) {
     let loud = 0, n = 0;
     for (let t = a; t < b; t += HOP) { n++; if ((db[Math.round(t / HOP)] ?? -100) > thr) loud++; }
     if (loud / Math.max(1, n) < .05) continue;
-    const out = await ask({ pcm: pcm.slice(Math.round(a * RATE), Math.round(b * RATE)), lang, webgpu: 'gpu' in navigator });
+    const out = await ask({ pcm: pcm.slice(Math.round(a * RATE), Math.round(b * RATE)), lang, webgpu: gpu && 'gpu' in navigator, light });
     if (HALLUCINATION.test(out.text || '')) continue;
     for (const c of out.chunks || []) {
       const text = (c.text || '').trim();
