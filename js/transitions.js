@@ -155,4 +155,4 @@ export function drawPostFx(ctx, W, H, fx, t) {
   if (fx.flash > .01) { ctx.save(); ctx.globalAlpha = clamp(fx.flash) * .92; ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H); ctx.restore(); }
 }
 
-export const TRANS_SFX = { whip: 'whoosh', blur: 'whoosh', flash: 'bam', glitch: 'click', spin: 'whoosh', zoomcut: '', cut: '' };
+export const TRANS_SFX = { whip: 'whoosh', blur: 'swipe', flash: 'bam', glitch: 'glitch', spin: 'whoosh', zoomcut: '', cut: '' };

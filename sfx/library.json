@@ -1,0 +1,557 @@
+{
+ "note": "Sons CC0 (domaine public) issus de github.com/Barty-Bart/motion-graphics (skill sound-effects, MIT). Le premier son de chaque catégorie est le kit par défaut choisi à l'oreille. Crédits et sources : LICENSES.md.",
+ "categories": {
+  "whoosh": [
+   {
+    "file": "kit/whoosh.ogg",
+    "dur": 0.43,
+    "credit": "\"Whoosh\" by qubodup (https://freesound.org/people/qubodup/sounds/60013/), CC0"
+   },
+   {
+    "file": "whoosh/fs-264777-swoosh.ogg",
+    "dur": 4.0,
+    "credit": "Shinplaster via Freesound (CC0; credit optional)"
+   },
+   {
+    "file": "whoosh/fs-169867-swoosh.ogg",
+    "dur": 2.21,
+    "credit": "Halgrimm via Freesound (CC0; credit optional)"
+   },
+   {
+    "file": "whoosh/fs-127197-fast-simple-chop-5-aif.ogg",
+    "dur": 0.48,
+    "credit": "dave.des via Freesound (CC0; credit optional)"
+   },
+   {
+    "file": "whoosh/fs-683101-quick-woosh.ogg",
+    "dur": 1.86,
+    "credit": "florianreichelt via Freesound (CC0; credit optional)"
+   },
+   {
+    "file": "whoosh/fs830856.ogg",
+    "dur": 0.35,
+    "credit": "MeanRaccoon via Freesound (CC0; credit given voluntarily)"
+   },
+   {
+    "file": "whoosh/fs810485.ogg",
+    "dur": 0.58,
+    "credit": "CVLTIV8R via Freesound (CC0; credit given voluntarily)"
+   },
+   {
+    "file": "whoosh/fs393811.ogg",
+    "dur": 0.2,
+    "credit": "deleted_user_6479820 via Freesound (CC0; credit given voluntarily)"
+   }
+  ],
+  "click": [
+   {
+    "file": "kit/click.ogg",
+    "dur": 0.09,
+    "credit": "\"Classic Click\" by adh.dreaming (https://freesound.org/people/adh.dreaming/sounds/671105/), CC0"
+   },
+   {
+    "file": "click/kenney-interface-click-001.ogg",
+    "dur": 0.1,
+    "credit": "Kenney (kenney.nl), CC0; credit optional"
+   },
+   {
+    "file": "click/kenney-interface-select-001.ogg",
+    "dur": 0.04,
+    "credit": "Kenney (kenney.nl), CC0; credit optional"
+   },
+   {
+    "file": "click/kenney-interface-select-002.ogg",
+    "dur": 0.04,
+    "credit": "Kenney (kenney.nl), CC0; credit optional"
+   },
+   {
+    "file": "click/kenney-interface-select-003.ogg",
+    "dur": 0.37,
+    "credit": "Kenney (kenney.nl), CC0; credit optional"
+   },
+   {
+    "file": "click/kenney-interface-tick-001.ogg",
+    "dur": 0.04,
+    "credit": "Kenney (kenney.nl), CC0; credit optional"
+   },
+   {
+    "file": "click/kenney-interface-toggle-001.ogg",
+    "dur": 0.14,
+    "credit": "Kenney (kenney.nl), CC0; credit optional"
+   },
+   {
+    "file": "click/kenney-interface-toggle-002.ogg",
+    "dur": 0.14,
+    "credit": "Kenney (kenney.nl), CC0; credit optional"
+   },
+   {
+    "file": "click/fs788933.ogg",
+    "dur": 0.13,
+    "credit": "Mediasaur via Freesound (CC0; credit given voluntarily)"
+   }
+  ],
+  "pop": [
+   {
+    "file": "kit/pop.ogg",
+    "dur": 0.12,
+    "credit": "\"POP SFX Neutral\" by ethernel0 (https://freesound.org/people/ethernel0/sounds/776016/), CC0"
+   },
+   {
+    "file": "pop/fs-447910-plop.ogg",
+    "dur": 0.24,
+    "credit": "Breviceps via Freesound (CC0; credit optional)"
+   },
+   {
+    "file": "pop/fs-467951-ui-button-click.ogg",
+    "dur": 0.12,
+    "credit": "benzix2 via Freesound (CC0; credit optional)"
+   },
+   {
+    "file": "pop/fs-258269-mouth-pop.ogg",
+    "dur": 0.32,
+    "credit": "jcallison via Freesound (CC0; credit optional)"
+   },
+   {
+    "file": "pop/fs-514833-user-interface-menu-sounds-wav.ogg",
+    "dur": 4.0,
+    "credit": "oussamaben via Freesound (CC0; credit optional)"
+   },
+   {
+    "file": "pop/fs-824189-pop-in-sfx.ogg",
+    "dur": 0.45,
+    "credit": "Sadiquecat via Freesound (CC0; credit optional)"
+   },
+   {
+    "file": "pop/kenney-interface-drop-001.ogg",
+    "dur": 0.13,
+    "credit": "Kenney (kenney.nl), CC0; credit optional"
+   },
+   {
+    "file": "pop/kenney-interface-drop-002.ogg",
+    "dur": 0.19,
+    "credit": "Kenney (kenney.nl), CC0; credit optional"
+   },
+   {
+    "file": "pop/kenney-interface-drop-003.ogg",
+    "dur": 0.19,
+    "credit": "Kenney (kenney.nl), CC0; credit optional"
+   },
+   {
+    "file": "pop/kenney-interface-pluck-001.ogg",
+    "dur": 0.1,
+    "credit": "Kenney (kenney.nl), CC0; credit optional"
+   },
+   {
+    "file": "pop/kenney-interface-pluck-002.ogg",
+    "dur": 0.16,
+    "credit": "Kenney (kenney.nl), CC0; credit optional"
+   },
+   {
+    "file": "pop/kenney-interface-maximize-001.ogg",
+    "dur": 0.25,
+    "credit": "Kenney (kenney.nl), CC0; credit optional"
+   },
+   {
+    "file": "pop/kenney-interface-maximize-002.ogg",
+    "dur": 0.25,
+    "credit": "Kenney (kenney.nl), CC0; credit optional"
+   },
+   {
+    "file": "pop/fs527522.ogg",
+    "dur": 0.08,
+    "credit": "Narjara via Freesound (CC0; credit given voluntarily)"
+   },
+   {
+    "file": "pop/fs323738.ogg",
+    "dur": 0.08,
+    "credit": "Reitanna via Freesound (CC0; credit given voluntarily)"
+   },
+   {
+    "file": "pop/fs202230.ogg",
+    "dur": 0.22,
+    "credit": "deraj via Freesound (CC0; credit given voluntarily)"
+   }
+  ],
+  "riser": [
+   {
+    "file": "kit/riser.ogg",
+    "dur": 2.01,
+    "credit": "\"Cinematic Riser #3 subtle\" by BeaconStudio (https://freesound.org/people/BeaconStudio/sounds/859482/), CC0"
+   },
+   {
+    "file": "riser/fs-685256-riser-sound-effect-short-wav.ogg",
+    "dur": 2.46,
+    "credit": "syntheffects via Freesound (CC0; credit optional)"
+   },
+   {
+    "file": "riser/fs-396161-scary-hits-risers-001.ogg",
+    "dur": 6.0,
+    "credit": "Xinematix via Freesound (CC0; credit optional)"
+   },
+   {
+    "file": "riser/fs-396160-scary-hits-risers-002.ogg",
+    "dur": 6.0,
+    "credit": "Xinematix via Freesound (CC0; credit optional)"
+   },
+   {
+    "file": "riser/fs-174363-rewind.ogg",
+    "dur": 6.0,
+    "credit": "kasa90 via Freesound (CC0; credit optional)"
+   },
+   {
+    "file": "riser/fs-464250-echo-chromatic-riser-wav.ogg",
+    "dur": 6.0,
+    "credit": "DylanTheFish via Freesound (CC0; credit optional)"
+   },
+   {
+    "file": "riser/kenney-digital-phaserup1.ogg",
+    "dur": 0.42,
+    "credit": "Kenney (kenney.nl), CC0; credit optional"
+   },
+   {
+    "file": "riser/kenney-digital-phaserup2.ogg",
+    "dur": 0.33,
+    "credit": "Kenney (kenney.nl), CC0; credit optional"
+   },
+   {
+    "file": "riser/kenney-digital-phaserup3.ogg",
+    "dur": 0.46,
+    "credit": "Kenney (kenney.nl), CC0; credit optional"
+   },
+   {
+    "file": "riser/kenney-digital-powerup1.ogg",
+    "dur": 1.11,
+    "credit": "Kenney (kenney.nl), CC0; credit optional"
+   },
+   {
+    "file": "riser/kenney-digital-powerup2.ogg",
+    "dur": 0.35,
+    "credit": "Kenney (kenney.nl), CC0; credit optional"
+   },
+   {
+    "file": "riser/kenney-digital-powerup3.ogg",
+    "dur": 1.01,
+    "credit": "Kenney (kenney.nl), CC0; credit optional"
+   },
+   {
+    "file": "riser/fs867126.ogg",
+    "dur": 2.01,
+    "credit": "Diim_1 via Freesound (CC0; credit given voluntarily)"
+   }
+  ],
+  "impact": [
+   {
+    "file": "kit/impact.ogg",
+    "dur": 0.27,
+    "credit": "\"soft_impact3\" by peoplearehappy (https://freesound.org/people/peoplearehappy/sounds/841274/), CC0"
+   },
+   {
+    "file": "impact/fs-177242-cinematic-impact.ogg",
+    "dur": 4.0,
+    "credit": "deleted_user_3277771 via Freesound (CC0; credit optional)"
+   },
+   {
+    "file": "impact/fs-222517-dramatic-hit.ogg",
+    "dur": 4.0,
+    "credit": "qubodup via Freesound (CC0; credit optional)"
+   },
+   {
+    "file": "impact/fs-347561-micheal-bay-hit.ogg",
+    "dur": 4.0,
+    "credit": "Kinoton via Freesound (CC0; credit optional)"
+   },
+   {
+    "file": "impact/kenney-impact-impactpunch-heavy-000.ogg",
+    "dur": 0.65,
+    "credit": "Kenney (kenney.nl), CC0; credit optional"
+   },
+   {
+    "file": "impact/kenney-impact-impactpunch-heavy-001.ogg",
+    "dur": 0.54,
+    "credit": "Kenney (kenney.nl), CC0; credit optional"
+   },
+   {
+    "file": "impact/kenney-impact-impactsoft-heavy-000.ogg",
+    "dur": 0.53,
+    "credit": "Kenney (kenney.nl), CC0; credit optional"
+   },
+   {
+    "file": "impact/kenney-impact-impactsoft-heavy-001.ogg",
+    "dur": 0.57,
+    "credit": "Kenney (kenney.nl), CC0; credit optional"
+   },
+   {
+    "file": "impact/kenney-sci-lowfrequency-explosion-000.ogg",
+    "dur": 1.99,
+    "credit": "Kenney (kenney.nl), CC0; credit optional"
+   },
+   {
+    "file": "impact/kenney-sci-lowfrequency-explosion-001.ogg",
+    "dur": 0.99,
+    "credit": "Kenney (kenney.nl), CC0; credit optional"
+   },
+   {
+    "file": "impact/fs524817.ogg",
+    "dur": 0.66,
+    "credit": "DeVern via Freesound (CC0; credit given voluntarily)"
+   },
+   {
+    "file": "impact/fs745291.ogg",
+    "dur": 0.29,
+    "credit": "SamsterBirdies via Freesound (CC0; credit given voluntarily)"
+   }
+  ],
+  "tick": [
+   {
+    "file": "kit/tick.ogg",
+    "dur": 0.02,
+    "credit": "\"Click / Tick\" by Squirrel_404 (https://freesound.org/people/Squirrel_404/sounds/683048/), CC0"
+   },
+   {
+    "file": "tick/fs528561.ogg",
+    "dur": 0.11,
+    "credit": "Jummit via Freesound (CC0; credit given voluntarily)"
+   },
+   {
+    "file": "tick/fs384187.ogg",
+    "dur": 0.13,
+    "credit": "malle99 via Freesound (CC0; credit given voluntarily)"
+   },
+   {
+    "file": "tick/fs721514.ogg",
+    "dur": 0.04,
+    "credit": "BaggoNotes via Freesound (CC0; credit given voluntarily)"
+   }
+  ],
+  "typing": [
+   {
+    "file": "typing/fs-323432-typing.ogg",
+    "dur": 4.0,
+    "credit": "Alivvie via Freesound (CC0; credit optional)"
+   },
+   {
+    "file": "typing/fs-79388-keyboard-typing-wav.ogg",
+    "dur": 4.0,
+    "credit": "j1987 via Freesound (CC0; credit optional)"
+   },
+   {
+    "file": "typing/fs-416777-digital-typing-wav.ogg",
+    "dur": 1.0,
+    "credit": "Sky_Motion via Freesound (CC0; credit optional)"
+   },
+   {
+    "file": "typing/fs-511418-data-reveal-sound.ogg",
+    "dur": 2.03,
+    "credit": "Sky_Motion via Freesound (CC0; credit optional)"
+   },
+   {
+    "file": "typing/fs-447909-keyboard-typing.ogg",
+    "dur": 3.8,
+    "credit": "Breviceps via Freesound (CC0; credit optional)"
+   }
+  ],
+  "ding": [
+   {
+    "file": "ding/fs-349504-triangle-open-04.ogg",
+    "dur": 4.0,
+    "credit": "cabled_mess via Freesound (CC0; credit optional)"
+   },
+   {
+    "file": "ding/fs-634690-lil-pip.ogg",
+    "dur": 0.07,
+    "credit": "adh.dreaming via Freesound (CC0; credit optional)"
+   },
+   {
+    "file": "ding/fs-571513-soft-notifications-bell-ding-d.ogg",
+    "dur": 0.76,
+    "credit": "LegitCheese via Freesound (CC0; credit optional)"
+   },
+   {
+    "file": "ding/kenney-interface-confirmation-001.ogg",
+    "dur": 0.29,
+    "credit": "Kenney (kenney.nl), CC0; credit optional"
+   },
+   {
+    "file": "ding/kenney-interface-confirmation-002.ogg",
+    "dur": 0.54,
+    "credit": "Kenney (kenney.nl), CC0; credit optional"
+   },
+   {
+    "file": "ding/kenney-interface-confirmation-003.ogg",
+    "dur": 0.32,
+    "credit": "Kenney (kenney.nl), CC0; credit optional"
+   },
+   {
+    "file": "ding/kenney-interface-bong-001.ogg",
+    "dur": 0.12,
+    "credit": "Kenney (kenney.nl), CC0; credit optional"
+   },
+   {
+    "file": "ding/kenney-interface-glass-001.ogg",
+    "dur": 0.28,
+    "credit": "Kenney (kenney.nl), CC0; credit optional"
+   },
+   {
+    "file": "ding/kenney-interface-glass-002.ogg",
+    "dur": 0.12,
+    "credit": "Kenney (kenney.nl), CC0; credit optional"
+   }
+  ],
+  "transition": [
+   {
+    "file": "transition/fs-702773-swipe-wav.ogg",
+    "dur": 0.84,
+    "credit": "LilMati via Freesound (CC0; credit optional)"
+   },
+   {
+    "file": "transition/fs-786514-swoosh-v2.ogg",
+    "dur": 0.3,
+    "credit": "migoreng1 via Freesound (CC0; credit optional)"
+   },
+   {
+    "file": "transition/fs-856168-cyberpunk-glitch-hologram-tran.ogg",
+    "dur": 2.99,
+    "credit": "brktkrgll via Freesound (CC0; credit optional)"
+   },
+   {
+    "file": "transition/fs-816262-broomstick-whoosh-3-quiet-okm1.ogg",
+    "dur": 0.41,
+    "credit": "Sadiquecat via Freesound (CC0; credit optional)"
+   },
+   {
+    "file": "transition/fs-850347-swipe-various.ogg",
+    "dur": 4.0,
+    "credit": "Gravy42 via Freesound (CC0; credit optional)"
+   },
+   {
+    "file": "transition/fs-683096-woosh.ogg",
+    "dur": 1.59,
+    "credit": "florianreichelt via Freesound (CC0; credit optional)"
+   },
+   {
+    "file": "transition/kenney-interface-maximize-005.ogg",
+    "dur": 0.5,
+    "credit": "Kenney (kenney.nl), CC0; credit optional"
+   },
+   {
+    "file": "transition/kenney-interface-maximize-006.ogg",
+    "dur": 0.38,
+    "credit": "Kenney (kenney.nl), CC0; credit optional"
+   },
+   {
+    "file": "transition/kenney-interface-minimize-001.ogg",
+    "dur": 0.26,
+    "credit": "Kenney (kenney.nl), CC0; credit optional"
+   },
+   {
+    "file": "transition/kenney-interface-minimize-002.ogg",
+    "dur": 0.26,
+    "credit": "Kenney (kenney.nl), CC0; credit optional"
+   },
+   {
+    "file": "transition/kenney-interface-scroll-001.ogg",
+    "dur": 1.0,
+    "credit": "Kenney (kenney.nl), CC0; credit optional"
+   },
+   {
+    "file": "transition/kenney-interface-scroll-002.ogg",
+    "dur": 1.0,
+    "credit": "Kenney (kenney.nl), CC0; credit optional"
+   }
+  ],
+  "glitch": [
+   {
+    "file": "glitch/fs-402451-fast-forward.ogg",
+    "dur": 4.0,
+    "credit": "plasterbrain via Freesound (CC0; credit optional)"
+   },
+   {
+    "file": "glitch/fs-339521-vhs-rewind-forward-and-eject.ogg",
+    "dur": 4.0,
+    "credit": "lucaslima via Freesound (CC0; credit optional)"
+   },
+   {
+    "file": "glitch/fs-144546-touchs-wav.ogg",
+    "dur": 4.0,
+    "credit": "garogourou via Freesound (CC0; credit optional)"
+   },
+   {
+    "file": "glitch/kenney-interface-glitch-002.ogg",
+    "dur": 0.03,
+    "credit": "Kenney (kenney.nl), CC0; credit optional"
+   },
+   {
+    "file": "glitch/kenney-sci-computernoise-000.ogg",
+    "dur": 4.0,
+    "credit": "Kenney (kenney.nl), CC0; credit optional"
+   },
+   {
+    "file": "glitch/kenney-sci-computernoise-001.ogg",
+    "dur": 4.0,
+    "credit": "Kenney (kenney.nl), CC0; credit optional"
+   },
+   {
+    "file": "glitch/kenney-sci-computernoise-002.ogg",
+    "dur": 4.0,
+    "credit": "Kenney (kenney.nl), CC0; credit optional"
+   }
+  ],
+  "ui-blip": [
+   {
+    "file": "ui-blip/kenney-ui-rollover1.ogg",
+    "dur": 0.22,
+    "credit": "Kenney (kenney.nl), CC0; credit optional"
+   },
+   {
+    "file": "ui-blip/kenney-ui-rollover2.ogg",
+    "dur": 0.05,
+    "credit": "Kenney (kenney.nl), CC0; credit optional"
+   },
+   {
+    "file": "ui-blip/kenney-ui-rollover3.ogg",
+    "dur": 0.07,
+    "credit": "Kenney (kenney.nl), CC0; credit optional"
+   },
+   {
+    "file": "ui-blip/kenney-ui-rollover4.ogg",
+    "dur": 0.07,
+    "credit": "Kenney (kenney.nl), CC0; credit optional"
+   },
+   {
+    "file": "ui-blip/kenney-digital-twotone1.ogg",
+    "dur": 0.61,
+    "credit": "Kenney (kenney.nl), CC0; credit optional"
+   },
+   {
+    "file": "ui-blip/kenney-digital-twotone2.ogg",
+    "dur": 0.63,
+    "credit": "Kenney (kenney.nl), CC0; credit optional"
+   },
+   {
+    "file": "ui-blip/kenney-digital-threetone1.ogg",
+    "dur": 0.76,
+    "credit": "Kenney (kenney.nl), CC0; credit optional"
+   },
+   {
+    "file": "ui-blip/kenney-digital-threetone2.ogg",
+    "dur": 0.76,
+    "credit": "Kenney (kenney.nl), CC0; credit optional"
+   },
+   {
+    "file": "ui-blip/kenney-digital-pepsound1.ogg",
+    "dur": 0.4,
+    "credit": "Kenney (kenney.nl), CC0; credit optional"
+   },
+   {
+    "file": "ui-blip/kenney-digital-pepsound2.ogg",
+    "dur": 0.45,
+    "credit": "Kenney (kenney.nl), CC0; credit optional"
+   },
+   {
+    "file": "ui-blip/kenney-digital-pepsound3.ogg",
+    "dur": 0.36,
+    "credit": "Kenney (kenney.nl), CC0; credit optional"
+   }
+  ]
+ }
+}
