@@ -349,9 +349,10 @@ async function loadFile(file) {
   const A = S.A = { status: 'running', msg: 'Lecture de l\'audio…', frac: .02, duration: video.duration, pcm: null, db: null, peaks: [], words: [], asrError: '' };
   wave = null; draw();
   try {
-    A.pcm = await decodeAudio(file);
+    const au = await decodeAudio(file);
+    A.pcm = au.pcm; A.audioError = au.error || ''; A.audioHow = au.how || '';
     if (A.pcm) { A.db = loudness(A.pcm); A.peaks = findPeaks(A.db); recomputeSilences(); buildWave(); }
-    setProgress(A.pcm ? 'Audio analysé.' : 'Pas de piste audio détectée.', .1);
+    setProgress(A.pcm ? 'Audio analysé.' : 'Son illisible : ' + A.audioError, .1);
     if (A.pcm && S.opts.transcribe) {
       A.transcribing = true; draw();
       try { A.words = await transcribe(A.pcm, A.db, { lang: S.opts.lang, onProgress: asrProgress }); }
@@ -420,8 +421,25 @@ async function captureStills() {
   v.removeAttribute('src'); v.load();
 }
 
+// Quand il n'y a pas de transcription, on dit pourquoi (au lieu de sous-titres qui manquent sans explication).
+function transcriptProblem() {
+  if (S.words.length) return null;
+  const A = S.A;
+  const why = !A.pcm ? `Le son de ta vidéo n'a pas pu être lu (${A.audioError || 'raison inconnue'}).`
+    : A.asrError ? `La transcription a échoué : ${A.asrError}.`
+    : !S.opts.transcribe ? 'La transcription était décochée à l\'import.'
+    : 'Aucune parole n\'a été reconnue (langue choisie : ' + (LANGS.find(l => l[0] === S.opts.lang)?.[1] || 'auto') + ').';
+  return el('div', { class: 'panel', style: 'border:1px solid var(--red)' },
+    el('h2', { class: 'err' }, 'Pas de transcription, donc pas de sous-titres'),
+    el('p', { class: 'muted', style: 'margin:0 0 8px' }, why),
+    el('div', { class: 'options' }, 'Langue', select(LANGS, S.opts.lang, v => { S.opts.lang = v; }),
+      el('button', { class: 'btn yellow', onclick: () => { S.opts.transcribe = true; loadFile(S.file); } }, '↻ Réessayer')),
+    el('p', { class: 'muted', style: 'margin:0' }, 'Si ça échoue encore, envoie-moi une capture de ce message.'));
+}
+
 // ---------- Onglet Look ----------
 function lookTab(C) {
+  const pb = transcriptProblem(); if (pb) C.append(pb);
   C.append(el('div', { class: 'steps' }, ...LOOK_STEPS.map((n, i) => el('button', { class: S.lookStep === i ? 'on' : '', onclick: () => { S.lookStep = i; S.visited.add(i); draw(); } },
     `${i + 1} ${n}`, S.visited.has(i) && i !== S.lookStep ? el('span', { class: 'ok' }, '✓') : null))));
   [lookColors, lookFonts, lookHook, lookCaptions, lookElements, lookMotion, lookTrans, lookReview][S.lookStep](C);
@@ -598,7 +616,7 @@ function editTab(C) {
     el('label', {}, 'Accroche', el('input', { type: 'text', value: S.hook.l1, oninput: e => { S.hook.l1 = e.target.value; } })),
     el('input', { type: 'text', value: S.hook.l2, oninput: e => { S.hook.l2 = e.target.value; } })));
   C.append(inspector());
-  if (!S.words.length) C.append(el('div', { class: 'panel' }, el('p', { class: 'muted' }, 'Pas de transcription : ajoute des animations à la tête de lecture.'), addHere()));
+  if (!S.words.length) C.append(transcriptProblem(), el('div', { class: 'panel' }, el('p', { class: 'muted' }, 'Sans transcription, ajoute des animations à la tête de lecture.'), addHere()));
   else C.append(doc());
   C.append(mediaSection());
 }
