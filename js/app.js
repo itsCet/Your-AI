@@ -344,7 +344,7 @@ async function loadFile(file) {
   cancelTranscription(); resetMatting();
   Object.assign(S, { file, fileName: file.name, items: [], sel: null, tab: 'look', lookStep: 0 });
   $('filename').textContent = file.name;
-  video.src = URL.createObjectURL(file);
+  video.src = URL.createObjectURL(file); video.load();
   await new Promise(r => video.addEventListener('loadedmetadata', r, { once: true }));
   const A = S.A = { status: 'running', msg: 'Lecture de l\'audio…', frac: .02, duration: video.duration, pcm: null, db: null, peaks: [], words: [], asrError: '' };
   wave = null; draw();
@@ -363,6 +363,7 @@ async function loadFile(file) {
     setProgress('Montage automatique…', .98);
     applyCleanup();
     replan(true);
+    setProgress('Préparation des aperçus…', .99);
     await captureStills();
     A.status = 'done';
     video.currentTime = 0;
@@ -385,21 +386,38 @@ function replan(first = false) {
 }
 
 // Images fixes de la vidéo : fond des vignettes du look et photos de l'Orbit / Carousel.
+// Sur iPhone, une vidéo hors écran ne se charge pas toujours toute seule : chaque attente a donc un délai
+// maximum, et si ça ne vient pas, les vignettes utilisent simplement l'image en cours (rien ne bloque).
+const within = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('délai dépassé')), ms))]);
+const once = (target, ok, bad) => new Promise((res, rej) => { target.addEventListener(ok, res, { once: true }); if (bad) target.addEventListener(bad, rej, { once: true }); });
 async function captureStills() {
   const v = Object.assign(document.createElement('video'), { src: URL.createObjectURL(S.file), muted: true, playsInline: true, preload: 'auto' });
+  v.setAttribute('playsinline', ''); v.setAttribute('muted', '');
+  const started = performance.now();
   try {
-    await new Promise((res, rej) => { v.addEventListener('loadeddata', res, { once: true }); v.addEventListener('error', rej, { once: true }); });
+    v.load();
+    await within(once(v, 'loadeddata', 'error'), 6000);
     const w = 270, h = Math.round(w * v.videoHeight / v.videoWidth), d = v.duration;
-    const grab = async t => { await new Promise(res => { v.addEventListener('seeked', res, { once: true }); v.currentTime = Math.min(d - .05, Math.max(0, t)); }); return createImageBitmap(v, { resizeWidth: w, resizeHeight: h }); };
+    const grab = async t => {
+      v.currentTime = Math.min(d - .05, Math.max(0, t));
+      await within(once(v, 'seeked'), 3000);
+      const c = document.createElement('canvas'); c.width = w; c.height = h;
+      c.getContext('2d').drawImage(v, 0, 0, w, h);
+      return c;
+    };
     // Échantillon : un sous-titre de 3 mots ou plus au premier tiers de la vidéo.
     const ch = S.chunks.find(c => c.s > d * .2 && c.words.length >= 3) || S.chunks[0];
     const t = ch ? ch.s : d * .3;
     S.sample = { t, end: ch ? ch.e : t + 2, frame: await grab(t + .2) };
     const imgs = S.media.filter(m => m.kind === 'image' && m.ready).map(m => m.el);
     S.photos = imgs.length >= 3 ? imgs : [];
-    for (const k of [.15, .3, .45, .6, .75, .9]) if (S.photos.length < 6) S.photos.push(await grab(d * k));
-  } catch { /* les vignettes utilisent l'image en cours */ }
-  v.removeAttribute('src');
+    for (const k of [.15, .3, .45, .6, .75, .9]) {
+      if (S.photos.length >= 6 || performance.now() - started > 15000) break;
+      S.photos.push(await grab(d * k));
+    }
+  } catch (e) { console.warn('Images fixes indisponibles :', e.message); }
+  if (!S.sample) S.sample = { t: S.A.duration * .3, end: S.A.duration * .3 + 2, frame: null };
+  v.removeAttribute('src'); v.load();
 }
 
 // ---------- Onglet Look ----------

@@ -162,7 +162,8 @@
   </section>
   <section id="content"></section>
 </main>
-<video id="video" playsinline muted style="display:none"></video>
+<!-- Pas de display:none : Safari iOS ne décode pas toujours les images d'une vidéo masquée ainsi. -->
+<video id="video" playsinline muted preload="auto" style="position:fixed;left:0;top:0;width:2px;height:2px;opacity:0;pointer-events:none"></video>
 <script type="module" src="js/app.js"></script>
 </body>
 </html>
