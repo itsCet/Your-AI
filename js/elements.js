@@ -3,13 +3,14 @@
 // m = { type, uid, start, dur, f: { champs texte }, variant, times? (instants des lignes), turn? }
 // L = { P palette, D police titre, B police texte, Hd police d'accent (manuscrite si le look en a une), caps }
 import { fstr, fitSize, wrap, clamp, drawVideoRect, drawFit, isLight, warmBg, pill } from './kit.js';
+import { MORPH_DEFS } from './morph.js';
 import { ez, stateAt, handRing, handLine, marker, checkMark, softCard } from './anim.js';
 
 // Éléments qui passent derrière la personne (effet profondeur), et ceux qui recouvrent tout l'écran.
 export const DEPTH_BEHIND = new Set(['kinetic', 'beat', 'counter', 'wordreveal', 'screen']);
-export const FULLSCREEN = new Set(['kinetic', 'beat']);
+export const FULLSCREEN = new Set(['kinetic', 'beat', 'morph', 'chapter']);
 // Éléments qui occupent le centre : les sous-titres se masquent pendant ce temps.
-export const HIDES_CAPTIONS = new Set(['kinetic', 'beat', 'counter', 'wordreveal', 'shrink', 'colorcard']);
+export const HIDES_CAPTIONS = new Set(['morph', 'chapter', 'kinetic', 'beat', 'counter', 'wordreveal', 'shrink', 'colorcard']);
 // Éléments qui floutent et assombrissent la vidéo derrière eux.
 export const DIMS = new Set(['statcard']);
 
@@ -541,6 +542,7 @@ const DEFS = {
       ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
     },
   },
+  ...MORPH_DEFS,
 };
 
 // Le fond plein écran est omis quand le texte passe derrière la personne (la vidéo reste visible).

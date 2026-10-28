@@ -22,6 +22,7 @@ function fieldsFor(type, m) {
     case 'statcard': return { label: m.before || '', value: m.big || m.display || '', unit: m.unit && !/^[%€$]$/.test(m.unit) ? m.unit : '' };
     case 'counter': return { value: m.big || m.display || '', label: m.unit && !/^[%€$]$/.test(m.unit) ? m.unit : (m.before || '') };
     case 'checklist': return { title: m.title || '', items: (m.items || []).map(i => i.text) };
+    case 'morph': return { pill: firstWords(m.title || (m.items || [])[0]?.text || '', 3), title: m.title || '', items: (m.items || []).map(i => i.text) };
     case 'versus': return { bad: m.left || '', good: m.right || '' };
     case 'emoji': return { emoji: m.emoji, word: String(m.text || '').split('|')[1] || '' };
     case 'comment': return { name: 'un abonné', text: m.text };
@@ -39,7 +40,7 @@ function fieldsFor(type, m) {
 // Types possibles pour chaque sorte de moment, par ordre de préférence.
 const PREFS = {
   number: ['statcard', 'counter', 'stamp'],
-  list: ['checklist'],
+  list: ['morph', 'checklist'],
   contrast: ['versus'],
   emoji: ['emoji', 'note'],
   question: ['comment', 'wordreveal'],
@@ -53,10 +54,10 @@ export function itemFromMoment(m, type, words, uid) {
   const def = CATALOG[type];
   const start = Math.max(0, +(m.t - (LEAD[type] ?? .15)).toFixed(2));
   let dur = def.dur;
-  if (type === 'checklist') dur = Math.min(12, Math.max(def.dur, (m.end ?? m.t) - start + 1.2));
+  if (type === 'checklist' || type === 'morph') dur = Math.min(12, Math.max(def.dur, (m.end ?? m.t) - start + 1.2));
   if (type === 'kinetic' || type === 'versus' || type === 'wordreveal') dur = Math.min(6, Math.max(def.dur, (m.end ?? m.t) - start + .6));
   const it = { uid, type, start, dur: +dur.toFixed(2), f: fieldsFor(type, m), variant: uid % 2, w0: wordIndexAt(words, m.t), from: 'auto' };
-  if (type === 'checklist' && m.items) it.times = m.items.map(i => Math.max(.1, +(i.t - start).toFixed(2)));
+  if ((type === 'checklist' || type === 'morph') && m.items) it.times = m.items.map(i => Math.max(.1, +(i.t - start).toFixed(2)));
   if (type === 'versus' && m.turn != null) it.turn = +(m.turn + (m.t - start)).toFixed(2);
   return it;
 }

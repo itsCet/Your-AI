@@ -41,7 +41,8 @@ python3 serve.py          # ouvre http://localhost:8765/index.html
 - **Départs rapides** : Signature, Clean, Loud, Playful, Scrapbook, Derrière toi. Chacun remplit toutes les étapes, et tout reste modifiable.
 - 8 palettes, 8 paires de polices (celles marquées « manuscrit » ajoutent une écriture à la main sur les mots d'accent), 7 styles d'accroche, 8 styles de sous-titres.
 - **Éléments** (cartes posées sur la vidéo) : note manuscrite, carte couleur, mot tampon, carte chiffre, checklist, avant / après, illustration emoji, écran d'appli, nom + rôle.
-- **Motion** (mouvements) : orbite de photos, carrousel, la vidéo rétrécit dans une carte, commentaire d'abonné, mots surlignés, compteur, phrase plein écran, beat cuts, punch-in, projecteur.
+- **Motion** (mouvements) : B-roll morphing, chapitre, orbite de photos, carrousel, la vidéo rétrécit dans une carte, commentaire d'abonné, mots surlignés, compteur, phrase plein écran, beat cuts, punch-in, projecteur.
+- **B-roll morphing** et **Chapitre** reprennent le style de la skill [motion-broll](https://github.com/Barty-Bart/motion-graphics/tree/main/skills/motion-broll) : plein écran sur une toile gris chaud, **une seule forme qui ne coupe jamais** (un bouton cliqué par un curseur devient une carte), contenu qui s'échange avec un court flou, ressorts physiques, et chaque ligne qui se coche **sur le mot où tu la dis**. Le montage automatique l'utilise quand tu énumères (« d'abord… ensuite… »).
 
 - **Transitions** entre les plans : recadrage (jump cut plus serré / plus large), whip pan, flou zoom, flash, glitch, zoom rotatif. Un plan change à chaque coupe, à chaque début de phrase et au moins toutes les ~6 s. Le style « Mix » met des recadrages partout et une grosse transition aux changements d'idée ; chaque transition se change dans l'Édition (étiquette ⇄), avec son whoosh.
 
@@ -64,6 +65,10 @@ Coupe des blancs (sensibilité réglable, visible en rouge sur la timeline), sou
 1. Onglet Édition → **📋 Copier pour Claude** : copie la transcription numérotée mot à mot, ta boîte à outils (éléments et motions du look) et le format de réponse.
 2. Colle-le à Claude. Il répond avec un plan JSON : accroche, **corrections** de mots, **coupes**, animations posées sur des index de mots avec leurs textes.
 3. **📥 Importer un plan** : colle la réponse. Le plan remplace le montage automatique (ce que tu as ajouté à la main est gardé), puis tu corriges tout dans l'Édition.
+
+## Sons
+
+De **vrais sons enregistrés**, libres de droits (CC0, domaine public), repris de la skill [sound-effects](https://github.com/Barty-Bart/motion-graphics/tree/main/skills/sound-effects) : pop, clic, tic, frappe, whoosh, swipe, impact, ding, glitch, montée. Le kit par défaut est utilisé en premier, puis l'app alterne entre plusieurs prises pour que les répétitions ne sonnent pas robotiques. Chaque animation et chaque transition a son son (modifiable), mixé dans l'export. Crédits et sources : `sfx/LICENSES.md`.
 
 ## Effet « Texte en arrière-plan » (profondeur 3D)
 
@@ -118,11 +123,14 @@ Les PNG détourés deviennent des stickers. 5 mises en page : carte encadrée (f
 | `js/render.js` | Dessin d'une image complète : vidéo, médias, éléments, sous-titres, accroche |
 | `js/elements.js` | Les éléments et motions (timelines GSAP + dessin) |
 | `js/anim.js` | Cache des timelines GSAP et primitives dessinées à la main (cercle, trait, surligneur, coche) |
+| `js/morph.js` | B-roll morphing et chapitre (style motion-broll : une forme, ressorts, curseur) |
 | `js/transitions.js` | Transitions entre les plans (placement, effet sur l'image, flash, glitch) |
 | `js/plan.js` | Montage automatique et aller-retour avec Claude (prompt, lecture du plan) |
 | `js/semantics.js` | Compréhension du discours : chiffres, listes, oppositions, questions, objets à illustrer |
 | `js/media.js` | Lecture des commentaires et mises en page des médias |
-| `js/sfx.js` | Effets sonores synthétisés |
+| `js/sfx.js` | Effets sonores : bibliothèque CC0 (`sfx/`), prises variées, son de secours synthétisé |
+| `sfx/` | Sons CC0 de [Barty-Bart/motion-graphics](https://github.com/Barty-Bart/motion-graphics) (`library.json`, `LICENSES.md`) |
+| `fonts/` | Police Geist (SIL OFL) des cartes B-roll |
 | `js/kit.js` | Palettes, composants de dessin, courbes |
 | `js/analyze.js` | Analyse audio (blancs, temps forts) et transcription Whisper (Web Worker) |
 | `js/depth.js` | Détourage dans le navigateur (MediaPipe) ou via le serveur, calque alpha de la personne |

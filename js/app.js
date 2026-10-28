@@ -10,7 +10,7 @@ import { FONT_PAIRS, HOOK_STYLES, CAPTION_STYLES, ELEMENTS, MOTIONS, CATALOG, PR
 import { decodeAudio, loudness, findSilences, cutsFromSilences, findPeaks, transcribe, cancelTranscription, chunkWords } from './analyze.js';
 import { autoPlan, itemFromMoment, claudePrompt, parsePlan, planToItems, hookFrom, wordIndexAt } from './plan.js';
 import { MEDIA_LAYOUTS, POSITIONS, interpretMedia, hasAlpha } from './media.js';
-import { SFX, DEFAULT_SFX, sfxEvents, playSfx } from './sfx.js';
+import { SFX, DEFAULT_SFX, sfxEvents, playSfx, loadSfxLibrary } from './sfx.js';
 import { TRANSITIONS, TRANS_STYLES, TRANS_SFX, planTransitions, transName } from './transitions.js';
 import { depth, BROWSER_MODELS, startBrowserMatting, startServerMatting, resetMatting, updateDepth, whenPrepared } from './depth.js';
 
@@ -18,7 +18,7 @@ const LANGS = [['fr', 'Français'], ['en', 'Anglais'], ['es', 'Espagnol'], ['de'
 const LOOK_STEPS = ['Couleurs', 'Polices', 'Accroche', 'Sous-titres', 'Éléments', 'Motion', 'Transitions', 'Revue'];
 const CHIP_COLORS = { note: '#ffd60a', colorcard: '#ffb020', stamp: '#ff7a59', statcard: '#7ee0ff', checklist: '#3ddc97', versus: '#ff9bd2', emoji: '#ffe08a',
   screen: '#a0b4ff', lower: '#c8c8c8', orbit: '#b892ff', carousel: '#b892ff', shrink: '#ffd60a', comment: '#ffffff', wordreveal: '#ffe600', counter: '#7ee0ff',
-  kinetic: '#ff8a65', beat: '#ff5a4f', zoom: '#9e9e9e', spotlight: '#9e9e9e' };
+  kinetic: '#ff8a65', beat: '#ff5a4f', morph: '#e9e7e2', chapter: '#e9e7e2', zoom: '#9e9e9e', spotlight: '#9e9e9e' };
 
 const S = {
   tab: 'look', lookStep: 0, visited: new Set([0]),
@@ -170,6 +170,7 @@ function ensureAudio() {
   const sfx = ac.createGain();
   src.connect(dest); src.connect(ac.destination);
   sfx.connect(dest); sfx.connect(ac.destination);
+  loadSfxLibrary(ac);
   return audio = { ac, dest, sfx };
 }
 document.addEventListener('pointerdown', () => { ensureAudio().ac.resume(); }, { once: true });
@@ -186,7 +187,7 @@ let lastT = 0;
 function tickSfx(c, t) {
   if (!S.sfx.on || !audio || audio.ac.state !== 'running') { lastT = t; return; }
   if (t < lastT || t - lastT > .5) { lastT = t; return; }
-  for (const e of sfxTimeline(c)) if (e.kind && e.t > lastT && e.t <= t) playSfx(audio.ac, audio.sfx, e.kind, S.sfx.vol);
+  for (const e of sfxTimeline(c)) if (e.kind && e.t > lastT && e.t <= t) playSfx(audio.ac, audio.sfx, e.kind, S.sfx.vol, e.t);
   lastT = t;
 }
 
@@ -433,8 +434,9 @@ const SAMPLE_F = {
   emoji: { emoji: '💡', word: 'idée' }, screen: { title: 'Mon appli', lines: ['Étape 1', 'Étape 2', 'Étape 3'] }, lower: { name: 'Ton nom', role: 'créateur' },
   shrink: { top: 'l\'idée', bottom: 'en une phrase' }, comment: { name: 'un abonné', text: 'Tu peux faire une partie 2 ?' },
   wordreveal: { text: 'une phrase forte à retenir', mark: 'retenir' }, counter: { value: '1000', label: 'vues' }, kinetic: { text: 'Ta phrase forte ici.' }, beat: { words: 'UN DEUX TROIS' },
+  morph: { pill: 'Ma méthode', title: 'En 3 étapes', items: ['Première idée', 'Deuxième idée', 'Troisième idée'] }, chapter: { num: '01', title: 'La suite', sub: '' },
 };
-const KIND_FOR = { statcard: 'number', counter: 'number', checklist: 'list', versus: 'contrast', emoji: 'emoji', comment: 'question' };
+const KIND_FOR = { statcard: 'number', counter: 'number', checklist: 'list', morph: 'list', versus: 'contrast', emoji: 'emoji', comment: 'question' };
 function sampleItem(type) {
   const need = KIND_FOR[type];
   const m = S.moments.find(x => need ? x.kind === need : ['keyword', 'punch'].includes(x.kind));
@@ -557,7 +559,7 @@ function addHere() {
 }
 
 // Champ principal de chaque type (celui que remplissent les mots sélectionnés).
-const MAIN_FIELD = { note: 'text', colorcard: 'top', stamp: 'text', comment: 'text', wordreveal: 'text', kinetic: 'text', beat: 'words', counter: 'value', shrink: 'top', lower: 'name', screen: 'title', statcard: 'value' };
+const MAIN_FIELD = { morph: 'title', chapter: 'title', note: 'text', colorcard: 'top', stamp: 'text', comment: 'text', wordreveal: 'text', kinetic: 'text', beat: 'words', counter: 'value', shrink: 'top', lower: 'name', screen: 'title', statcard: 'value' };
 
 // Nouvel élément posé sur des mots (texte prérempli avec les mots sélectionnés).
 function newItem(type, a, b, at) {
@@ -566,7 +568,8 @@ function newItem(type, a, b, at) {
   const f = JSON.parse(JSON.stringify(SAMPLE_F[type] || {}));
   const set = MAIN_FIELD[type];
   if (set && text) f[set] = type === 'beat' ? text.toUpperCase() : text;
-  if (type === 'checklist' && text) f.items = text.split(/,|\set\s/).map(s => s.trim()).filter(Boolean);
+  if ((type === 'checklist' || type === 'morph') && text) f.items = text.split(/,|\set\s/).map(s => s.trim()).filter(Boolean);
+  if (type === 'morph' && text) f.pill = text.split(/\s+/).slice(0, 3).join(' ');
   if (type === 'statcard' && text) { const n = text.match(/\d+(?:[.,]\d+)?/); f.value = n ? n[0] : text; f.label = ''; f.unit = ''; }
   if (type === 'wordreveal' && text) f.mark = '';
   const start = at != null ? at : (S.words[a]?.s ?? 0) - .15;
@@ -904,6 +907,7 @@ async function exportVideo() {
     const stream = c.captureStream(30);
     const { ac, dest } = ensureAudio();
     await ac.resume();
+    await loadSfxLibrary(ac);
     dest.stream.getAudioTracks().forEach(t => stream.addTrack(t));
     const mime = ['video/mp4;codecs=avc1,mp4a', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4'].find(m => MediaRecorder.isTypeSupported(m));
     const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 12e6 });

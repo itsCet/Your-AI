@@ -69,6 +69,8 @@ export const MOTIONS = [
   { id: 'counter', name: 'Compteur', desc: 'Un grand chiffre qui défile', dur: 2.6, fields: [['value', 'Chiffre'], ['label', 'Légende']] },
   { id: 'kinetic', name: 'Phrase plein écran', desc: 'La phrase se construit mot par mot, plein écran', dur: 3, fields: [['text', 'Phrase']] },
   { id: 'beat', name: 'Beat cuts', desc: 'Des mots plein écran qui claquent', dur: 1.8, fields: [['words', 'Mots']] },
+  { id: 'morph', name: 'B-roll morphing', desc: 'Plein écran : un bouton cliqué devient une carte dont les lignes se cochent sur tes mots', dur: 4.5, fields: [['pill', 'Bouton'], ['title', 'Titre'], ['items', 'Lignes (une par ligne)', 'list']] },
+  { id: 'chapter', name: 'Chapitre', desc: 'Plein écran : « À suivre → » devient un grand numéro et un titre', dur: 2.6, fields: [['num', 'Numéro'], ['title', 'Titre'], ['sub', 'Sous-titre']] },
   { id: 'zoom', name: 'Punch-in', desc: 'Zoom rapide sur ton visage', dur: 1.4, fields: [] },
   { id: 'spotlight', name: 'Spotlight', desc: 'Tout s\'assombrit autour de toi', dur: 2.4, fields: [] },
 ];
@@ -79,10 +81,10 @@ export const CATALOG = Object.fromEntries([...ELEMENTS, ...MOTIONS].map(x => [x.
 export const PRESETS = [
   { id: 'signature', name: 'Signature', desc: 'Chaud, manuscrit, personnel',
     pal: 'sunlit', fonts: 'montserrat-caveat', hook: 'tiles', captions: 'editorial', trans: 'auto', fx: { pop: true, slide: true, glow: false },
-    elements: ['note', 'colorcard', 'stamp', 'statcard', 'checklist', 'emoji'], motion: ['orbit', 'shrink', 'comment', 'wordreveal', 'counter', 'zoom'] },
+    elements: ['note', 'colorcard', 'stamp', 'statcard', 'checklist', 'emoji'], motion: ['morph', 'orbit', 'shrink', 'comment', 'wordreveal', 'counter', 'zoom'] },
   { id: 'clean', name: 'Clean', desc: 'Sobre, net, pro',
     pal: 'electric', fonts: 'playfair-inter', hook: 'editorial', captions: 'highlight', trans: 'blur', fx: { pop: false, slide: true, glow: false },
-    elements: ['statcard', 'checklist', 'versus', 'lower', 'screen'], motion: ['wordreveal', 'counter', 'zoom'] },
+    elements: ['statcard', 'checklist', 'versus', 'lower', 'screen'], motion: ['morph', 'chapter', 'wordreveal', 'counter', 'zoom'] },
   { id: 'loud', name: 'Loud', desc: 'Capitales, rouge, punch',
     pal: 'signal', fonts: 'anton-inter', hook: 'stacked', captions: 'pop', trans: 'flash', fx: { pop: true, slide: false, glow: false },
     elements: ['stamp', 'statcard', 'versus', 'emoji'], motion: ['beat', 'kinetic', 'counter', 'carousel', 'zoom'] },

@@ -1,13 +1,15 @@
-// Effets sonores synthétisés (aucun fichier) : pop, clic, frappe, whoosh, impact, ding.
+// Effets sonores : de vrais sons enregistrés (bibliothèque CC0 dans sfx/, voir sfx/LICENSES.md),
+// avec un son synthétisé en secours si un fichier ne se charge pas.
 // Ils passent par le même AudioContext que la vidéo, donc ils sont aussi dans l'export.
 
-export const SFX = [['', 'Aucun'], ['pop', 'Pop'], ['click', 'Clic'], ['type', 'Frappe'], ['whoosh', 'Whoosh'], ['bam', 'Impact'], ['ding', 'Ding']];
+export const SFX = [['', 'Aucun'], ['pop', 'Pop'], ['click', 'Clic'], ['tick', 'Tic'], ['type', 'Frappe'], ['whoosh', 'Whoosh'], ['swipe', 'Swipe'],
+  ['bam', 'Impact'], ['ding', 'Ding'], ['glitch', 'Glitch'], ['riser', 'Montée']];
 
 // Son par défaut de chaque élément.
 export const DEFAULT_SFX = {
   note: 'pop', colorcard: 'whoosh', stamp: 'bam', statcard: 'whoosh', checklist: 'click', versus: 'whoosh', emoji: 'pop',
   screen: 'whoosh', lower: 'whoosh', orbit: 'whoosh', carousel: 'whoosh', shrink: 'whoosh', comment: 'pop',
-  wordreveal: 'pop', counter: 'click', kinetic: 'type', beat: 'bam', zoom: 'whoosh', spotlight: '', media: 'pop', title: 'whoosh',
+  wordreveal: 'pop', counter: 'click', morph: 'click', chapter: 'swipe', kinetic: 'type', beat: 'bam', zoom: 'whoosh', spotlight: '', media: 'pop', title: 'whoosh',
 };
 
 // Liste des sons d'un élément, en secondes depuis son début (certains sons se répètent).
@@ -26,9 +28,70 @@ export function sfxEvents(item) {
       const n = Math.max(1, (Array.isArray(f.items) ? f.items : String(f.items || '').split('\n')).filter(Boolean).length);
       return Array.from({ length: n }, (_, i) => ({ t: .5 + i * Math.min(.6, (item.dur - 1) / n), kind }));
     }
+    case 'morph': {
+      // Le clic du curseur, puis un tic par ligne cochée.
+      const n = (Array.isArray(f.items) ? f.items : String(f.items || '').split('\n')).filter(Boolean).length;
+      const tc = Math.min(.9, item.dur * .25);
+      const ts = item.times?.length ? item.times : Array.from({ length: n }, (_, i) => tc + .5 + i * Math.min(.55, (item.dur - tc - 1) / Math.max(1, n)));
+      return [{ t: 0, kind: 'swipe' }, { t: tc, kind }, ...ts.map(t => ({ t: t + .12, kind: 'tick' }))];
+    }
+    case 'chapter': return [{ t: 0, kind }, { t: Math.min(.95, item.dur * .33), kind: 'pop' }];
     case 'versus': return [{ t: 0, kind }, { t: (item.turn ?? item.dur * .38) + .2, kind: 'ding' }];
     default: return [{ t: 0, kind }];
   }
+}
+
+// ---------- Bibliothèque de sons (sfx/library.json) ----------
+// Pour chaque son de l'app : catégorie de la bibliothèque, durée max d'une prise, volume, nombre de prises
+// pour varier (la 1re est le kit par défaut ; on alterne pour que les répétitions ne sonnent pas robotiques).
+const KINDS = {
+  pop: { cat: 'pop', max: .45, gain: .55, takes: 4 },
+  click: { cat: 'click', max: .3, gain: .5, takes: 3 },
+  tick: { cat: 'tick', max: .3, gain: .35, takes: 3 },
+  type: { cat: 'typing', max: .16, gain: .3, takes: 2, slice: true },
+  whoosh: { cat: 'whoosh', max: .9, gain: .45, takes: 3, extra: 'transition' },
+  swipe: { cat: 'transition', max: .9, gain: .45, takes: 3 },
+  bam: { cat: 'impact', max: 1.4, gain: .7, takes: 3 },
+  ding: { cat: 'ding', max: 1, gain: .45, takes: 3 },
+  glitch: { cat: 'glitch', max: .55, gain: .4, takes: 3 },
+  riser: { cat: 'riser', max: 2.5, gain: .4, takes: 2 },
+};
+let library = null, loading = null;
+const buffers = new Map();
+// Charge et décode les sons une fois (appelé quand l'audio démarre).
+export function loadSfxLibrary(ac) {
+  if (loading) return loading;
+  loading = fetch('sfx/library.json').then(r => r.json()).then(async lib => {
+    library = {};
+    for (const [kind, k] of Object.entries(KINDS)) {
+      const all = [...(lib.categories[k.cat] || []), ...(k.extra ? lib.categories[k.extra] || [] : [])];
+      // Le kit d'abord, puis les prises courtes (une prise de 4 s ne va pas sur un clic).
+      const pool = [all[0], ...all.slice(1).filter(e => k.slice || e.dur <= k.max * 1.6)].filter(Boolean).slice(0, k.takes);
+      library[kind] = pool.map(e => e.file);
+    }
+    const files = [...new Set(Object.values(library).flat())];
+    await Promise.all(files.map(async f => {
+      try { buffers.set(f, await ac.decodeAudioData(await (await fetch('sfx/' + f)).arrayBuffer())); } catch { /* son de secours */ }
+    }));
+  }).catch(() => { library = null; });
+  return loading;
+}
+
+// seed : un nombre stable par événement (son temps), pour que l'aperçu et l'export choisissent la même prise.
+export function playSfx(ac, out, kind, volume = .6, seed = 0) {
+  const k = KINDS[kind], files = library?.[kind];
+  const buf = files?.length ? buffers.get(files[Math.abs(Math.round(seed * 7.3)) % files.length]) || buffers.get(files[0]) : null;
+  if (!k || !buf) return synth(ac, out, kind, volume);
+  const t = ac.currentTime + .005;
+  const src = ac.createBufferSource(); src.buffer = buf;
+  const g = ac.createGain();
+  const len = Math.min(k.max, buf.duration);
+  const off = k.slice ? (Math.abs(seed * 1.37) % Math.max(.01, buf.duration - len)) : 0;
+  g.gain.setValueAtTime(k.gain * volume, t);
+  // Fondu de sortie si on coupe une prise plus longue que la durée max.
+  if (buf.duration - off > len) { g.gain.setValueAtTime(k.gain * volume, t + len * .7); g.gain.linearRampToValueAtTime(0, t + len); }
+  src.connect(g); g.connect(out);
+  src.start(t, off, len + .02);
 }
 
 let noiseBuf = null;
@@ -49,17 +112,17 @@ function env(ac, out, at, peak, attack, decay) {
   return g;
 }
 
-export function playSfx(ac, out, kind, volume = .6) {
+function synth(ac, out, kind, volume = .6) {
   const t = ac.currentTime + .005, v = volume;
   if (kind === 'pop') {
     const o = ac.createOscillator(); o.type = 'sine';
     o.frequency.setValueAtTime(500, t); o.frequency.exponentialRampToValueAtTime(1300, t + .06);
     o.connect(env(ac, out, t, .5 * v, .005, .09)); o.start(t); o.stop(t + .12);
-  } else if (kind === 'click' || kind === 'type') {
+  } else if (kind === 'click' || kind === 'type' || kind === 'tick' || kind === 'glitch') {
     const n = noise(ac), f = ac.createBiquadFilter();
     f.type = 'bandpass'; f.frequency.value = kind === 'type' ? 2500 + Math.random() * 1500 : 3500; f.Q.value = 1.5;
     n.connect(f); f.connect(env(ac, out, t, (kind === 'type' ? .35 : .5) * v, .002, .03)); n.start(t); n.stop(t + .06);
-  } else if (kind === 'whoosh') {
+  } else if (kind === 'whoosh' || kind === 'swipe' || kind === 'riser') {
     const n = noise(ac), f = ac.createBiquadFilter();
     f.type = 'bandpass'; f.Q.value = .8;
     f.frequency.setValueAtTime(300, t); f.frequency.exponentialRampToValueAtTime(3000, t + .25); f.frequency.exponentialRampToValueAtTime(800, t + .4);
