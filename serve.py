@@ -59,7 +59,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         super().__init__(*args, directory=ROOT, **kwargs)
 
     def log_message(self, fmt, *args):
-        if "/matte/status" not in (args[0] if args else ""):
+        if "/matte/status" not in (str(args[0]) if args else ""):
             super().log_message(fmt, *args)
 
     def _send(self, code, body, ctype):
