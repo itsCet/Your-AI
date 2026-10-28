@@ -75,7 +75,25 @@ export const MOTIONS = [
   { id: 'spotlight', name: 'Spotlight', desc: 'Tout s\'assombrit autour de toi', dur: 2.4, fields: [] },
 ];
 
-export const CATALOG = Object.fromEntries([...ELEMENTS, ...MOTIONS].map(x => [x.id, x]));
+// Les effets de la vidéo « 17 video effects Claude can create » qui manquaient (voir js/reel.js).
+// « (détourage) » : l'effet utilise ta silhouette détourée ; l'app la calcule toute seule.
+export const REEL_EFFECTS = [
+  { id: 'couchwall', name: 'Mur de vignettes', desc: 'Un mur de vignettes arrive derrière toi, + un gros titre (détourage)', dur: 3, fields: [['text', 'Gros titre'], ['mark', 'Mot en couleur']] },
+  { id: 'uiworld', name: 'Monde appli', desc: 'L\'écran se coupe : une appli de montage en haut, toi en bas', dur: 3.5, fields: [['app', 'Nom de l\'appli'], ['tag', 'Étiquette'], ['command', 'Commande tapée']] },
+  { id: 'framebreak', name: 'Sortie du cadre', desc: 'Ta vidéo devient une publication, tes mains et ta tête dépassent (détourage)', dur: 3, fields: [['handle', '@compte']] },
+  { id: 'phonemockup', name: 'Téléphone', desc: 'Un téléphone avec une conversation glisse derrière ton épaule (détourage)', dur: 3.2, fields: [['title', 'Titre'], ['msg', 'Message'], ['reply', 'Réponse']] },
+  { id: 'headlinewall', name: 'Mur de unes', desc: 'Des coupures de presse se collent derrière toi (détourage)', dur: 3.2, fields: [['items', 'Titres (un par ligne)', 'list']] },
+  { id: 'chartgrow', name: 'Courbe qui monte', desc: 'L\'image s\'assombrit, une courbe lumineuse grimpe jour après jour', dur: 3, fields: [['label', 'Étiquette'], ['axis', 'Axe (un par ligne)', 'list']] },
+  { id: 'pullback', name: 'Recul dans l\'éditeur', desc: 'La caméra recule : ta vidéo était dans un logiciel de montage', dur: 3.5, fields: [['file', 'Nom du fichier'], ['steps', 'Étapes (une par ligne)', 'list']] },
+  { id: 'greenscreen', name: 'Fond remplacé', desc: 'Ton fond devient une interface, le texte passe derrière toi (détourage)', dur: 3.2, fields: [['task', 'Tâche'], ['items', 'Lignes (une par ligne)', 'list'], ['text', 'Phrase'], ['mark', 'Mot surligné']] },
+  { id: 'papercut', name: 'Collage papier', desc: 'Toi en sticker sur papier quadrillé, scotch, gribouillis, lettres découpées (détourage)', dur: 3.2, fields: [['text', 'Lettres découpées']] },
+  { id: 'doodleboil', name: 'Contour dessiné', desc: 'Un contour blanc tremblé autour de toi et des petits dessins (détourage)', dur: 2.8, fields: [] },
+  { id: 'vertigo', name: 'Vertigo', desc: 'Le fond grossit pendant que tu restes à la même taille (détourage)', dur: 2.6, fields: [['text', 'Gros titre'], ['mark', 'Mot en couleur']] },
+  { id: 'coverstory', name: 'Couverture de magazine', desc: 'Un titre de magazine géant derrière ta tête, dans un fin cadre (détourage)', dur: 3, fields: [['title', 'Titre'], ['lines', 'Lignes de couverture', 'list']] },
+  { id: 'glasstype', name: 'Texte en verre', desc: 'Un énorme mot en verre dépoli, en relief, derrière toi (détourage)', dur: 3, fields: [['text', 'Mot']] },
+];
+
+export const CATALOG = Object.fromEntries([...ELEMENTS, ...MOTIONS, ...REEL_EFFECTS].map(x => [x.id, x]));
 
 // Looks prêts à l'emploi (départ rapide). Tout reste modifiable étape par étape.
 export const PRESETS = [
@@ -98,6 +116,10 @@ export const PRESETS = [
     pal: 'mono', fonts: 'anton-inter', hook: 'depth', captions: 'brackets', trans: 'whip', fx: { pop: true, slide: true, glow: false }, depth: true,
     elements: ['statcard', 'checklist', 'versus'], motion: ['kinetic', 'beat', 'counter', 'zoom'] },
 ];
+
+PRESETS.push({ id: 'reel17', name: 'Effets 17', desc: 'Les effets de la vidéo « 17 video effects »', pal: 'sunlit', fonts: 'anton-inter', hook: 'stacked', captions: 'pop', trans: 'auto',
+  fx: { pop: true, slide: true, glow: false }, depth: true, elements: ['checklist'],
+  motion: ['orbit', 'zoom', 'couchwall', 'framebreak', 'phonemockup', 'headlinewall', 'chartgrow', 'pullback', 'greenscreen', 'papercut', 'doodleboil', 'vertigo', 'coverstory', 'glasstype', 'uiworld'] });
 
 export const DEFAULT_LOOK = { ...PRESETS[0], preset: 'signature' };
 

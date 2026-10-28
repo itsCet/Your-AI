@@ -6,7 +6,8 @@
 //  - Revue : coupes, sous-titres, sons, export, couverture.
 import { render, setVideo, lookContext } from './render.js';
 import { fstr, clamp, PALETTES } from './kit.js';
-import { FONT_PAIRS, HOOK_STYLES, CAPTION_STYLES, ELEMENTS, MOTIONS, CATALOG, PRESETS, DEFAULT_LOOK } from './look.js';
+import { FONT_PAIRS, HOOK_STYLES, CAPTION_STYLES, ELEMENTS, MOTIONS, REEL_EFFECTS, CATALOG, PRESETS, DEFAULT_LOOK } from './look.js';
+import { NEEDS_MATTE } from './reel.js';
 import { decodeAudio, loudness, findPeaks, transcribe, cancelTranscription, chunkWords } from './analyze.js';
 import { autoPlan, itemFromMoment, claudePrompt, parsePlan, planToItems, hookFrom, wordIndexAt } from './plan.js';
 import { MEDIA_LAYOUTS, POSITIONS, interpretMedia, hasAlpha } from './media.js';
@@ -19,7 +20,9 @@ const LANGS = [['fr', 'Français'], ['en', 'Anglais'], ['es', 'Espagnol'], ['de'
 const LOOK_STEPS = ['Couleurs', 'Polices', 'Accroche', 'Sous-titres', 'Éléments', 'Motion', 'Transitions', 'Revue'];
 const CHIP_COLORS = { note: '#ffd60a', colorcard: '#ffb020', stamp: '#ff7a59', statcard: '#7ee0ff', checklist: '#3ddc97', versus: '#ff9bd2', emoji: '#ffe08a',
   screen: '#a0b4ff', lower: '#c8c8c8', orbit: '#b892ff', carousel: '#b892ff', shrink: '#ffd60a', comment: '#ffffff', wordreveal: '#ffe600', counter: '#7ee0ff',
-  kinetic: '#ff8a65', beat: '#ff5a4f', morph: '#e9e7e2', chapter: '#e9e7e2', zoom: '#9e9e9e', spotlight: '#9e9e9e' };
+  kinetic: '#ff8a65', beat: '#ff5a4f', morph: '#e9e7e2', chapter: '#e9e7e2',
+  couchwall: '#c3f0ca', uiworld: '#c3f0ca', framebreak: '#c3f0ca', phonemockup: '#c3f0ca', headlinewall: '#c3f0ca', chartgrow: '#c3f0ca', pullback: '#c3f0ca',
+  greenscreen: '#c3f0ca', papercut: '#c3f0ca', doodleboil: '#c3f0ca', vertigo: '#c3f0ca', coverstory: '#c3f0ca', glasstype: '#c3f0ca', zoom: '#9e9e9e', spotlight: '#9e9e9e' };
 
 const S = {
   tab: 'look', lookStep: 0, visited: new Set([0]),
@@ -244,6 +247,8 @@ function drawFrame(now) {
     const seg = S.cutSegs.find(([a, b]) => video.currentTime >= a && video.currentTime < b - .02);
     if (seg) video.currentTime = seg[1] >= video.duration - .05 ? 0 : seg[1];
   }
+  // Un effet qui a besoin de ta silhouette est posé : on lance le détourage une fois (tu peux le décocher ensuite).
+  if (!S.autoDepth && !S.depthOn && S.file && S.items.some(it => NEEDS_MATTE.has(it.type))) { S.autoDepth = true; S.depthOn = true; startDepth(); draw(); }
   const t = video.currentTime || 0;
   // Pendant le choix du look, l'accroche reste affichée pour voir l'effet de chaque clic.
   const pinHook = S.tab === 'look' && S.lookStep <= 3;
@@ -519,6 +524,12 @@ const SAMPLE_F = {
   emoji: { emoji: '💡', word: 'idée' }, screen: { title: 'Mon appli', lines: ['Étape 1', 'Étape 2', 'Étape 3'] }, lower: { name: 'Ton nom', role: 'créateur' },
   shrink: { top: 'l\'idée', bottom: 'en une phrase' }, comment: { name: 'un abonné', text: 'Tu peux faire une partie 2 ?' },
   wordreveal: { text: 'une phrase forte à retenir', mark: 'retenir' }, counter: { value: '1000', label: 'vues' }, kinetic: { text: 'Ta phrase forte ici.' }, beat: { words: 'UN DEUX TROIS' },
+  couchwall: { text: 'vendre une formation', mark: 'formation' }, uiworld: { app: 'Studio', tag: 'RUSHS', command: '/montage' }, framebreak: { handle: '@toncompte' },
+  phonemockup: { title: 'Assistant', msg: 'Coupe les blancs et ajoute les sous-titres', reply: 'C\'est fait. Je lance le rendu ?' },
+  headlinewall: { items: ['Ta phrase forte en gros titre', 'On en parle partout', 'Le secret enfin révélé'] }, chartgrow: { label: 'ÇA MONTE ↗', axis: ['L', 'M', 'M', 'J', 'V', 'S', 'D'] },
+  pullback: { file: 'mon-reel.mp4', steps: ['Transcription', 'Meilleure prise', 'Coupes', 'Sous-titres', 'Rendu'] },
+  greenscreen: { task: 'Écrire la page de vente', items: ['Tourner la vidéo', 'Monter le reel', 'Publier'], text: 'il te faut du montage', mark: 'montage' },
+  papercut: { text: '100%' }, doodleboil: {}, vertigo: { text: 'NUL EN DESIGN', mark: 'design' }, coverstory: { title: 'EDIT', lines: ['Le guide', 'Monter un reel en 10 min'] }, glasstype: { text: 'DESIGN' },
   morph: { pill: 'Ma méthode', title: 'En 3 étapes', items: ['Première idée', 'Deuxième idée', 'Troisième idée'] }, chapter: { num: '01', title: 'La suite', sub: '' },
 };
 const KIND_FOR = { statcard: 'number', counter: 'number', checklist: 'list', morph: 'list', versus: 'contrast', emoji: 'emoji', comment: 'question' };
@@ -558,6 +569,9 @@ function lookMotion(C) {
     el('label', {}, el('input', { type: 'checkbox', checked: fx.slide, onchange: e => { S.look = { ...S.look, fx: { ...fx, slide: e.target.checked } }; } }), 'Entrées glissées avec flou'),
     el('label', {}, el('input', { type: 'checkbox', checked: fx.glow, onchange: e => { S.look = { ...S.look, fx: { ...fx, glow: e.target.checked } }; } }), 'Lueur néon')));
   toolboxGrid(C, MOTIONS, 'motion');
+  C.append(el('h2', { style: 'font-size:15px;margin:22px 0 4px' }, 'Les effets de la vidéo « 17 video effects Claude can create »'),
+    el('p', { class: 'muted', style: 'margin:0 0 12px' }, 'Ceux marqués « détourage » utilisent ta silhouette : l\'app la calcule dès que tu en poses un (sinon une version de secours s\'affiche).'));
+  toolboxGrid(C, REEL_EFFECTS, 'motion');
 }
 // Aperçu d'une transition : deux images de ta vidéo, coupe au milieu de la boucle.
 function transCard(kindOf) {
@@ -645,7 +659,7 @@ function addHere() {
 }
 
 // Champ principal de chaque type (celui que remplissent les mots sélectionnés).
-const MAIN_FIELD = { morph: 'title', chapter: 'title', note: 'text', colorcard: 'top', stamp: 'text', comment: 'text', wordreveal: 'text', kinetic: 'text', beat: 'words', counter: 'value', shrink: 'top', lower: 'name', screen: 'title', statcard: 'value' };
+const MAIN_FIELD = { couchwall: 'text', vertigo: 'text', glasstype: 'text', coverstory: 'title', papercut: 'text', greenscreen: 'text', morph: 'title', chapter: 'title', note: 'text', colorcard: 'top', stamp: 'text', comment: 'text', wordreveal: 'text', kinetic: 'text', beat: 'words', counter: 'value', shrink: 'top', lower: 'name', screen: 'title', statcard: 'value' };
 
 // Nouvel élément posé sur des mots (texte prérempli avec les mots sélectionnés).
 function newItem(type, a, b, at) {
