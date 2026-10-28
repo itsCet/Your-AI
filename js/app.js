@@ -653,8 +653,10 @@ function doc() {
     d.append(p);
   }
   // Sélection : un mot (clic) ou plusieurs (glisser). Double-clic : corriger le mot sur place.
+  // Glisser à la souris : la sélection du navigateur donne la plage de mots.
   d.addEventListener('mouseup', () => {
     const s = window.getSelection();
+    if (s.isCollapsed) return;
     const idx = n => { const e = n?.nodeType === 3 ? n.parentElement : n; const w = e?.closest?.('.wd'); return w ? +w.dataset.i : null; };
     let a = idx(s.anchorNode), b = idx(s.focusNode);
     if (a == null && b == null) return;
@@ -663,6 +665,16 @@ function doc() {
     S.sel = { kind: 'words', a, b }; S.lastWord = a;
     video.currentTime = S.words[a].s;
     s.removeAllRanges();
+    draw();
+  });
+  // Toucher / cliquer un mot : le sélectionne, ou termine la plage si « Étendre » est actif (tactile).
+  d.addEventListener('click', e => {
+    const w = e.target.closest('.wd');
+    if (!w || !window.getSelection().isCollapsed) return;
+    const i = +w.dataset.i;
+    if (S.extend && S.sel?.kind === 'words') S.sel = { kind: 'words', a: Math.min(S.sel.a, i), b: Math.max(S.sel.b, i) };
+    else { S.sel = { kind: 'words', a: i, b: i }; video.currentTime = S.words[i].s; }
+    S.extend = false; S.lastWord = i;
     draw();
   });
   d.addEventListener('dblclick', e => { const w = e.target.closest('.wd'); if (w) editWordInline(+w.dataset.i); });
@@ -730,6 +742,8 @@ function inspector() {
         el('button', { class: 'btn small primary', onclick: go }, 'Corriger'),
         w.fixed ? el('span', { class: 'muted' }, `transcrit : « ${w.orig} »`) : null));
     }
+    const why = [...new Set(S.words.slice(a, b + 1).map(x => x.cutWhy).filter(Boolean))];
+    if (why.length) box.append(el('p', { class: 'muted', style: 'margin:4px 0' }, 'Coupé par le nettoyage : ' + why.join(', ') + '.'));
     const types = [...(S.look.elements || []), ...(S.look.motion || [])];
     const rest = Object.keys(CATALOG).filter(k => !types.includes(k));
     box.append(el('div', { class: 'row-btns' },
@@ -740,11 +754,14 @@ function inspector() {
         const it = newItem(v, a, one ? null : b);
         S.items.push(it); S.items.sort((x, y) => x.start - y.start); S.sel = { kind: 'item', uid: it.uid }; draw();
       }),
-      el('button', { class: 'btn small', onclick: () => { S.sel = null; draw(); } }, 'Fermer')));
+      el('button', { class: 'btn small' + (S.extend ? ' primary' : ''), onclick: () => { S.extend = !S.extend; draw(); } },
+        S.extend ? 'Touche le dernier mot…' : 'Étendre jusqu\'à un autre mot'),
+      el('button', { class: 'btn small', onclick: () => { S.sel = null; S.extend = false; draw(); } }, 'Fermer')));
     return box;
   }
+  box.classList.add('idle');
   box.append(el('h2', {}, 'Comment corriger'),
-    el('p', { class: 'muted', style: 'margin:0' }, 'Clique sur un mot pour le corriger ou le couper. Glisse sur plusieurs mots pour les couper ou poser une animation dessus. Double-clic pour corriger directement. Clique sur une étiquette ▶ pour modifier une animation, ou ⇄ pour changer une transition.'));
+    el('p', { class: 'muted', style: 'margin:0' }, 'Touche ou clique un mot pour le corriger ou le couper. Pour plusieurs mots : glisse à la souris, ou touche le premier puis « Étendre jusqu\'à un autre mot » pour les couper ou poser une animation dessus. Double-clic pour corriger directement. Clique sur une étiquette ▶ pour modifier une animation, ou ⇄ pour changer une transition.'));
   return box;
 }
 
@@ -903,7 +920,7 @@ function reviewTab(C) {
     el('button', { class: 'btn yellow', id: 'exportBtn', onclick: exportVideo }, 'Exporter la vidéo'),
     el('div', { class: 'progress' }, el('div', { id: 'bar' })),
     el('p', { class: 'muted', id: 'status' }, S.server.ffmpeg ? 'Export en MP4 H.264.' : 'Sans ffmpeg (serve.py), l\'export sort dans le format du navigateur.'),
-    el('p', { class: 'muted' }, 'L\'export se fait en temps réel : garde l\'onglet au premier plan.'),
+    el('p', { class: 'muted' }, 'L\'export se fait en temps réel : garde l\'onglet au premier plan (sur téléphone, garde l\'écran allumé).'),
     el('div', { class: 'row-btns' },
       el('button', { class: 'btn', onclick: downloadCover }, 'Télécharger la couverture (PNG)'),
       el('button', { class: 'btn', onclick: copyForClaude }, '📋 Copier pour Claude'))));
@@ -946,7 +963,7 @@ async function exportVideo() {
     await ac.resume();
     await loadSfxLibrary(ac);
     dest.stream.getAudioTracks().forEach(t => stream.addTrack(t));
-    const mime = ['video/mp4;codecs=avc1,mp4a', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4'].find(m => MediaRecorder.isTypeSupported(m));
+    const mime = ['video/mp4;codecs=avc1,mp4a', 'video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4'].find(m => MediaRecorder.isTypeSupported(m));
     const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 12e6 });
     const chunks = [];
     rec.ondataavailable = e => e.data.size && chunks.push(e.data);
