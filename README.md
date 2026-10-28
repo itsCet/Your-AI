@@ -48,6 +48,28 @@ python3 serve.py          # ouvre http://localhost:8765/index.html
 
 Tu coches ce que tu veux : le montage automatique n'utilise que ça. Les animations sont faites avec [GSAP](https://gsap.com) (timelines rejouées à l'image près, en avant comme en arrière).
 
+### Les effets de la vidéo « 17 video effects Claude can create »
+
+Dans Look → Motion (et le départ rapide **Effets 17**). Reconstruits d'après la description effet par effet de [ONIKOSIOLA/video-editing-kit](https://github.com/ONIKOSIOLA/video-editing-kit) (`reel-effects-17.md`), sans reprendre de code. Ceux qui existaient déjà : Orbit, Checklist, Punch-in (digital zoom), et la transition **Zoom à travers** (zoom-through cut). Nouveaux :
+
+| Effet | Ce qu'il fait | Détourage |
+| --- | --- | --- |
+| Mur de vignettes (couch wall) | des vignettes arrivent en flou sur le mur derrière toi, + gros titre | oui |
+| Monde appli (UI world) | l'écran se coupe : une appli de montage en haut (notre maquette), toi en bas | non |
+| Sortie du cadre (frame break) | ta vidéo devient une publication, ce qui dépasse sort du cadre | oui |
+| Téléphone (phone mockup) | un téléphone avec une conversation glisse derrière ton épaule | oui |
+| Mur de unes (headline wall) | des coupures de presse se collent derrière toi | oui |
+| Courbe qui monte (chart grow) | l'image s'assombrit, une courbe lumineuse grimpe (valeurs relatives, aucun chiffre inventé) | non |
+| Recul dans l'éditeur (pull-back reveal) | la caméra recule : ta vidéo était dans un logiciel de montage | non |
+| Fond remplacé (green screen) | ton fond devient une interface, le texte passe derrière toi | oui |
+| Collage papier (paper cut) | toi en sticker détouré sur papier quadrillé, scotch, gribouillis, lettres découpées entourées en rouge | oui |
+| Contour dessiné (doodle boil) | contour blanc tremblé autour de toi + petits dessins | oui |
+| Vertigo | le fond grossit pendant que tu restes à la même taille | oui |
+| Couverture de magazine (cover story) | titre géant derrière ta tête, fin cadre, lignes de couverture | oui |
+| Texte en verre (glass type) | énorme mot en verre dépoli, en relief, derrière toi | oui |
+
+Dès que tu poses un effet « détourage », l'app calcule ta silhouette toute seule (une fois par vidéo ; compte quelques minutes sur une machine sans carte graphique). En attendant, chaque effet a une version de secours.
+
 ### 2. Édition : la transcription comme un document
 
 - **Corriger un mot** (franglais, noms propres) : clique dessus, tape la bonne orthographe. « Partout et retenir » le corrige dans toute la vidéo et l'ajoute au **dictionnaire** : il sera corrigé automatiquement dans tes prochaines vidéos. Double-clic pour corriger directement dans le texte. Un mot corrigé est souligné en vert (le mot transcrit s'affiche au survol).
@@ -134,6 +156,7 @@ Les PNG détourés deviennent des stickers. 5 mises en page : carte encadrée (f
 | `js/render.js` | Dessin d'une image complète : vidéo, médias, éléments, sous-titres, accroche |
 | `js/elements.js` | Les éléments et motions (timelines GSAP + dessin) |
 | `js/anim.js` | Cache des timelines GSAP et primitives dessinées à la main (cercle, trait, surligneur, coche) |
+| `js/reel.js` | Les effets de la vidéo « 17 video effects » (scènes, effets derrière toi, contour, sticker) |
 | `js/morph.js` | B-roll morphing et chapitre (style motion-broll : une forme, ressorts, curseur) |
 | `js/cleanup.js` | Nettoyage : hésitations, tics, répétitions, reprises, blancs selon le rythme |
 | `js/transitions.js` | Transitions entre les plans (placement, effet sur l'image, flash, glitch) |

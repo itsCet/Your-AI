@@ -4,7 +4,7 @@ import { PALETTES, fstr, clamp, fitSize, drawVideoRect, drawFit, isLight, setFra
 import { palOf, pairOf } from './look.js';
 import { ez, handLine, marker } from './anim.js';
 import { videoFx, withVideoFx, drawPostFx } from './transitions.js';
-import { drawOverlay, drawShrink, zoomOf, stateOf, DEPTH_BEHIND, FULLSCREEN, HIDES_CAPTIONS, DIMS } from './elements.js';
+import { drawOverlay, drawShrink, drawFront, zoomOf, stateOf, DEPTH_BEHIND, FULLSCREEN, HIDES_CAPTIONS, DIMS, SCENES } from './elements.js';
 import { drawMedia, syncMediaVideo, MEDIA_DIMS } from './media.js';
 
 export { setVideo } from './kit.js';
@@ -257,24 +257,28 @@ function renderFrame(ctx, W, H, t, o) {
   for (const m of mediaOn) if (MEDIA_DIMS.has(m.layout)) dim = Math.max(dim, ez('power2.out')(clamp(Math.min(t - m.start, m.start + m.dur - t) / .3)));
   // Transition entre deux plans : seule l'image de la vidéo bouge.
   const fx = videoFx(o.transitions, t);
+  // Effet « scène » (UI world, green screen, paper cut…) : il dessine lui-même la vidéo et la personne.
+  const scene = active.find(m => SCENES.has(m.type));
+  const person = o.depth ? (z = 1) => personCanvas(W, H, zoom * z, o.depth, fx) : null;
   ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
-  withVideoFx(ctx, W, H, fx, (c, z) => drawVideoRect(c, 0, 0, W, H, 0, z), zoom);
-  if (dim > 0) {
+  if (scene) drawOverlay(ctx, W, H, scene, t - scene.start, { ...oo, person }, L);
+  else withVideoFx(ctx, W, H, fx, (c, z) => drawVideoRect(c, 0, 0, W, H, 0, z), zoom);
+  if (dim > 0 && !scene) {
     ctx.save(); ctx.globalAlpha = dim; ctx.filter = `blur(${Math.round(W * .02)}px) brightness(.5)`;
     withVideoFx(ctx, W, H, fx, (c, z) => drawVideoRect(c, -W * .05, -H * .05, W * 1.1, H * 1.1, 0, z), zoom);
     ctx.restore();
   }
-  const shrunk = shrink ? drawShrink(ctx, W, H, shrink, t - shrink.start, L, zoom * fx.zoom) : false;
+  const shrunk = shrink && !scene ? drawShrink(ctx, W, H, shrink, t - shrink.start, L, zoom * fx.zoom) : false;
 
   const fullMedia = mediaOn.some(m => m.layout === 'full');
-  const depthOn = !!(o.depth && !shrunk && !fullMedia);
+  const depthOn = !!(o.depth && !shrunk && !fullMedia && !scene);
   const titleOn = o.hook && (o.hook.l1 || o.hook.l2) && t >= o.titleStart && t <= o.titleStart + o.titleDur;
-  const covered = dim > .3 || fullMedia || mediaOn.some(m => m.layout === 'split') || (!depthOn && active.some(m => FULLSCREEN.has(m.type)));
+  const covered = !!scene || dim > .3 || fullMedia || mediaOn.some(m => m.layout === 'split') || (!depthOn && active.some(m => FULLSCREEN.has(m.type)));
   const showTitle = titleOn && !covered;
   const behind = m => depthOn && DEPTH_BEHIND.has(m.type);
   const glow = o.look.fx?.glow ? L.P.accent : null;
-  const draw = m => withGlow(ctx, glow && !['checklist', 'versus', 'comment', 'screen', 'stamp', 'colorcard'].includes(m.type) ? glow : null, W,
-    () => drawOverlay(ctx, W, H, m, t - m.start, { ...oo, depthBehind: behind(m) }, L));
+  const draw = m => withGlow(ctx, glow && !['checklist', 'versus', 'comment', 'screen', 'stamp', 'colorcard'].includes(m.type) && !DEPTH_BEHIND.has(m.type) ? glow : null, W,
+    () => drawOverlay(ctx, W, H, m, t - m.start, { ...oo, person, depthBehind: behind(m) }, L));
   const hookP = (t - o.titleStart) / o.titleDur;
 
   // Couche du milieu : ce qui passe derrière la personne (ou les plein écran sans profondeur).
@@ -286,7 +290,8 @@ function renderFrame(ctx, W, H, t, o) {
   if (depthOn && showTitle && o.look.hook === 'depth') drawHook(ctx, W, H, hookP, o, L, 'front');
 
   for (const m of mediaOn) drawMedia(ctx, W, H, m, t - m.start, oo);
-  for (const m of active) if (!FULLSCREEN.has(m.type) && !behind(m) && m.type !== 'zoom' && m.type !== 'shrink') draw(m);
+  for (const m of active) if (!FULLSCREEN.has(m.type) && !behind(m) && m.type !== 'zoom' && m.type !== 'shrink' && !SCENES.has(m.type)) draw(m);
+  for (const m of active) drawFront(ctx, W, H, m, t - m.start, oo, L);
   if (o.captions && o.captions.chunks.length && !fullMedia && !active.some(m => HIDES_CAPTIONS.has(m.type)))
     withGlow(ctx, glow && o.captions.style !== 'box' ? glow : null, W, () => drawCaptions(ctx, W, H, t, oo, L));
   if (showTitle && !depthOn) withGlow(ctx, glow, W, () => drawHook(ctx, W, H, hookP, o, L));
@@ -296,6 +301,10 @@ function renderFrame(ctx, W, H, t, o) {
 // La personne seule (vidéo × masque alpha), au même cadrage que la vidéo.
 let personLayer = null;
 function drawPerson(ctx, W, H, zoom, alpha, fx) {
+  ctx.drawImage(personCanvas(W, H, zoom, alpha, fx), 0, 0);
+}
+// Calque W×H qui ne contient que la personne (vidéo × masque), au cadrage de la vidéo.
+function personCanvas(W, H, zoom, alpha, fx) {
   if (!personLayer) personLayer = document.createElement('canvas');
   if (personLayer.width !== W || personLayer.height !== H) { personLayer.width = W; personLayer.height = H; }
   const g = personLayer.getContext('2d');
@@ -305,5 +314,5 @@ function drawPerson(ctx, W, H, zoom, alpha, fx) {
   g.globalCompositeOperation = 'destination-in';
   withVideoFx(g, W, H, fx, (c, z) => drawFit(c, alpha, 0, 0, W, H, { zoom: z }), zoom);
   g.globalCompositeOperation = 'source-over';
-  ctx.drawImage(personLayer, 0, 0);
+  return personLayer;
 }

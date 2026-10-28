@@ -11,6 +11,7 @@ export const TRANSITIONS = [
   { id: 'flash', name: 'Flash', desc: 'Éclair blanc au moment de la coupe', big: true },
   { id: 'glitch', name: 'Glitch', desc: 'Décalage RVB et tranches qui sautent', big: true },
   { id: 'spin', name: 'Zoom rotatif', desc: 'Le plan arrive en tournant et en dézoomant', big: true },
+  { id: 'zoomthrough', name: 'Zoom à travers', desc: 'On plonge dans l\'image jusqu\'au flou, le plan suivant arrive de trop près et se pose (vidéo « 17 effets »)', big: true },
   { id: 'cut', name: 'Coupe sèche', desc: 'Aucun effet', big: false },
 ];
 export const TRANS_STYLES = [
@@ -21,12 +22,15 @@ export const TRANS_STYLES = [
   { id: 'flash', name: 'Flash', desc: 'Flash blanc aux changements d\'idée, recadrages ailleurs' },
   { id: 'glitch', name: 'Glitch', desc: 'Glitch aux changements d\'idée, recadrages ailleurs' },
   { id: 'spin', name: 'Zoom rotatif', desc: 'Zoom rotatif aux changements d\'idée, recadrages ailleurs' },
+  { id: 'zoomthrough', name: 'Zoom à travers', desc: 'Plongée dans l\'image aux changements d\'idée, recadrages ailleurs' },
   { id: 'cut', name: 'Coupes sèches', desc: 'Aucune transition' },
 ];
 export const transName = id => TRANSITIONS.find(x => x.id === id)?.name || id;
 
 const OUT = .16, IN = .32;
-const MIX = ['whip', 'blur', 'flash', 'spin'];
+// Le zoom à travers a besoin de plus d'élan avant la coupe et d'un peu plus de temps pour se poser.
+const OUT_OF = { zoomthrough: .3 }, IN_OF = { zoomthrough: .45 };
+const MIX = ['whip', 'zoomthrough', 'flash', 'blur', 'spin'];
 
 /**
  * Les changements de plan : chaque coupe (blanc ou mots barrés), plus, sans coupe, chaque début de phrase
@@ -91,7 +95,7 @@ export function videoFx(trans, t) {
   for (const tr of trans) if (tr.b <= t + .001) cur = tr;
   fx.zoom = cur ? cur.level : 1;
   for (const tr of trans) {
-    const pin = (t - tr.b) / IN, pout = (tr.a - t) / OUT;
+    const pin = (t - tr.b) / (IN_OF[tr.kind] || IN), pout = (tr.a - t) / (OUT_OF[tr.kind] || OUT);
     const inside = pin >= 0 && pin < 1, before = pout >= 0 && pout < 1;
     if (!inside && !before) continue;
     const k = tr.kind;
@@ -103,6 +107,7 @@ export function videoFx(trans, t) {
       if (k === 'flash') { fx.flash = Math.max(fx.flash, e); fx.zoom *= 1 + .06 * e; }
       if (k === 'glitch') fx.glitch = pin < .55 ? 1 - pin / .55 : 0;
       if (k === 'spin') { fx.zoom *= 1 + .35 * e; fx.rot = -.22 * e; fx.blur = .02 * e; }
+      if (k === 'zoomthrough') { fx.zoom *= 1 + .5 * e; fx.blur = .028 * e; }
     } else {
       const e = ez('power2.in')(1 - pout); // 0 → 1 en arrivant à la coupe
       if (k === 'whip') { fx.dx = -.55 * e; fx.blur = .035 * e; }
@@ -110,6 +115,7 @@ export function videoFx(trans, t) {
       if (k === 'flash') fx.flash = Math.max(fx.flash, e);
       if (k === 'glitch') fx.glitch = e * .8;
       if (k === 'spin') { fx.zoom *= 1 + .26 * e; fx.rot = .15 * e; fx.blur = .015 * e; }
+      if (k === 'zoomthrough') { fx.zoom *= 1 + 2.2 * e; fx.blur = .03 * e; }
     }
   }
   return fx;
@@ -155,4 +161,4 @@ export function drawPostFx(ctx, W, H, fx, t) {
   if (fx.flash > .01) { ctx.save(); ctx.globalAlpha = clamp(fx.flash) * .92; ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H); ctx.restore(); }
 }
 
-export const TRANS_SFX = { whip: 'whoosh', blur: 'swipe', flash: 'bam', glitch: 'glitch', spin: 'whoosh', zoomcut: '', cut: '' };
+export const TRANS_SFX = { zoomthrough: 'whoosh', whip: 'whoosh', blur: 'swipe', flash: 'bam', glitch: 'glitch', spin: 'whoosh', zoomcut: '', cut: '' };

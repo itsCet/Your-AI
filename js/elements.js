@@ -4,13 +4,15 @@
 // L = { P palette, D police titre, B police texte, Hd police d'accent (manuscrite si le look en a une), caps }
 import { fstr, fitSize, wrap, clamp, drawVideoRect, drawFit, isLight, warmBg, pill } from './kit.js';
 import { MORPH_DEFS } from './morph.js';
+import { REEL_DEFS, SCENES, BEHIND, REEL_HIDES } from './reel.js';
 import { ez, stateAt, handRing, handLine, marker, checkMark, softCard } from './anim.js';
 
 // Éléments qui passent derrière la personne (effet profondeur), et ceux qui recouvrent tout l'écran.
-export const DEPTH_BEHIND = new Set(['kinetic', 'beat', 'counter', 'wordreveal', 'screen']);
+export const DEPTH_BEHIND = new Set(['kinetic', 'beat', 'counter', 'wordreveal', 'screen', ...BEHIND]);
+export { SCENES };
 export const FULLSCREEN = new Set(['kinetic', 'beat', 'morph', 'chapter']);
 // Éléments qui occupent le centre : les sous-titres se masquent pendant ce temps.
-export const HIDES_CAPTIONS = new Set(['morph', 'chapter', 'kinetic', 'beat', 'counter', 'wordreveal', 'shrink', 'colorcard']);
+export const HIDES_CAPTIONS = new Set([...REEL_HIDES, 'morph', 'chapter', 'kinetic', 'beat', 'counter', 'wordreveal', 'shrink', 'colorcard']);
 // Éléments qui floutent et assombrissent la vidéo derrière eux.
 export const DIMS = new Set(['statcard']);
 
@@ -543,6 +545,8 @@ const DEFS = {
     },
   },
   ...MORPH_DEFS,
+  // Effets de la vidéo « 17 video effects » : dessinés en fonction du temps, sans timeline GSAP.
+  ...Object.fromEntries(Object.entries(REEL_DEFS).map(([k, d]) => [k, { init: {}, build() {}, draw: (ctx, s, m, L, W, H, lt, o) => d.draw(ctx, m, lt, L, W, H, o) }])),
 };
 
 // Le fond plein écran est omis quand le texte passe derrière la personne (la vidéo reste visible).
@@ -598,6 +602,14 @@ export function drawShrink(ctx, W, H, m, lt, L, zoom) {
   if (bot) { const fs = fitSize(ctx, tx(L, bot), L.Hd, W * .86, slot * .62); ctx.font = fstr(L.Hd, fs); ctx.globalAlpha = clamp(s.bot); ctx.fillText(tx(L, bot), W / 2, vy + vh + slot / 2 - (1 - s.bot) * slot * .3); }
   ctx.restore();
   return true;
+}
+
+// Partie « devant » de certains effets (cadre de magazine, gros titre) : dessinée après la personne.
+export function drawFront(ctx, W, H, m, lt, o, L) {
+  const d = REEL_DEFS[m.type];
+  if (!d?.front) return;
+  ctx.save();
+  try { d.front(ctx, m, lt, L, W, H, o); } finally { ctx.restore(); }
 }
 
 // Facteur de zoom (punch-in) à un instant.

@@ -9,7 +9,9 @@ export const SFX = [['', 'Aucun'], ['pop', 'Pop'], ['click', 'Clic'], ['tick', '
 export const DEFAULT_SFX = {
   note: 'pop', colorcard: 'whoosh', stamp: 'bam', statcard: 'whoosh', checklist: 'click', versus: 'whoosh', emoji: 'pop',
   screen: 'whoosh', lower: 'whoosh', orbit: 'whoosh', carousel: 'whoosh', shrink: 'whoosh', comment: 'pop',
-  wordreveal: 'pop', counter: 'click', morph: 'click', chapter: 'swipe', kinetic: 'type', beat: 'bam', zoom: 'whoosh', spotlight: '', media: 'pop', title: 'whoosh',
+  wordreveal: 'pop', counter: 'click', morph: 'click', chapter: 'swipe',
+  couchwall: 'whoosh', uiworld: 'swipe', framebreak: 'whoosh', phonemockup: 'swipe', headlinewall: 'pop', chartgrow: 'riser', pullback: 'whoosh',
+  greenscreen: 'glitch', papercut: 'bam', doodleboil: 'pop', vertigo: 'riser', coverstory: 'bam', glasstype: 'whoosh', kinetic: 'type', beat: 'bam', zoom: 'whoosh', spotlight: '', media: 'pop', title: 'whoosh',
 };
 
 // Liste des sons d'un élément, en secondes depuis son début (certains sons se répètent).
